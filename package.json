@@ -1,0 +1,20 @@
+{
+  "name": "arogya-lis-pathology",
+  "version": "1.0.0",
+  "description": "Laboratory Information System (LIS) for Pathology Labs in India using Google Workspace",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node src/Tests.js"
+  },
+  "keywords": [
+    "lis",
+    "pathology",
+    "laboratory-information-system",
+    "google-apps-script",
+    "google-sheets",
+    "dpdp-2023"
+  ],
+  "author": "Arogya Diagnostic & Research Laboratory",
+  "license": "MIT"
+}

@@ -314,3 +314,4 @@ const PatientService = {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = PatientService;
 }
+

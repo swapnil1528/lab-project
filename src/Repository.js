@@ -296,3 +296,4 @@ const Repository = {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = Repository;
 }
+

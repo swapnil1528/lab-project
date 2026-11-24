@@ -160,3 +160,4 @@ const AdminService = {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = AdminService;
 }
+

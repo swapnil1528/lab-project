@@ -212,3 +212,4 @@ const Triggers = {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = Triggers;
 }
+

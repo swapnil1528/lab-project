@@ -152,3 +152,4 @@ const InventoryService = {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = InventoryService;
 }
+

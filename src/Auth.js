@@ -197,3 +197,4 @@ const SessionContext = {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { ROLES, PERMISSIONS, SessionContext };
 }
+

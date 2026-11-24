@@ -207,3 +207,4 @@ function apiRunDatabaseSetup() {
 function apiInstallTriggers() {
   return Triggers.installAllTriggers();
 }
+

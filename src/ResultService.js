@@ -582,3 +582,4 @@ const ResultService = {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = ResultService;
 }
+
