@@ -1,0 +1,201 @@
+<!-- Diagnostic Report Viewer & Delivery Workspace -->
+<div id="tab-reports" class="tab-content hidden max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-4">
+  
+  <div class="flex items-center justify-between bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+    <div>
+      <h2 class="text-base font-bold text-slate-900">Reports & Dispatch Center</h2>
+      <p class="text-xs text-slate-500">Preview branded medical reports, export Google Docs PDF, dispatch WhatsApp and email notifications</p>
+    </div>
+  </div>
+
+  <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+    <div class="flex gap-3 mb-4">
+      <input type="text" id="report-order-search-input" placeholder="Enter Order No (e.g. ORD-2026-10001) or UHID..."
+        class="flex-1 bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500">
+      <button onclick="searchReportByOrder()" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold">
+        Load Report
+      </button>
+    </div>
+
+    <!-- Active Report Preview Shell -->
+    <div id="report-preview-container" class="hidden border border-slate-200 rounded-xl p-8 bg-white max-w-4xl mx-auto shadow-sm space-y-6">
+      
+      <!-- Lab Header -->
+      <div class="border-b-2 border-slate-800 pb-4 flex justify-between items-start">
+        <div>
+          <h2 class="text-xl font-extrabold text-blue-900 tracking-tight">AROGYA DIAGNOSTIC & RESEARCH LABORATORY</h2>
+          <p class="text-xs text-slate-600 font-medium">Precision Diagnostics & Clinical Excellence • NABL & ICMR Quality Aligned</p>
+          <p class="text-xs text-slate-500">Shop 12-14, Health Plaza, SV Road, Andheri West, Mumbai • Tel: +91 98200 12345</p>
+        </div>
+        <div class="text-right">
+          <span class="text-xs font-mono font-bold px-2 py-1 bg-slate-100 border border-slate-300 rounded" id="rep-order-no">ORD-000</span>
+        </div>
+      </div>
+
+      <!-- Watermark Alert (if unpaid) -->
+      <div id="rep-watermark-banner" class="hidden p-3 bg-amber-50 border border-amber-300 rounded-lg text-center text-xs font-bold text-amber-900">
+        ⚠️ PROVISIONAL REPORT - PAYMENT PENDING (FULL ACCESS RELEASED UPON SETTLEMENT)
+      </div>
+
+      <!-- Patient Info Grid -->
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 bg-slate-50 rounded-lg text-xs">
+        <div><span class="text-slate-500 block">Patient Name:</span><strong id="rep-patient-name" class="text-slate-900"></strong></div>
+        <div><span class="text-slate-500 block">UHID:</span><strong id="rep-uhid" class="font-mono text-slate-900"></strong></div>
+        <div><span class="text-slate-500 block">Age / Gender:</span><strong id="rep-age-gender" class="text-slate-900"></strong></div>
+        <div><span class="text-slate-500 block">Ref Doctor:</span><strong id="rep-doctor" class="text-slate-900"></strong></div>
+      </div>
+
+      <!-- Dynamic Departments & Results Table -->
+      <div id="rep-dept-results-tables" class="space-y-6 text-xs">
+        <!-- Tables injected by JS -->
+      </div>
+
+      <!-- Pathologist Electronic Signature & Verification QR -->
+      <div class="border-t border-slate-300 pt-6 flex justify-between items-end text-xs">
+        <div>
+          <div class="text-slate-500 text-[10px] uppercase font-bold mb-1">Authenticity Verification:</div>
+          <p class="text-[11px] text-slate-600">Scan QR Code or visit portal to verify cryptographic digital signature.</p>
+          <a id="rep-verification-link" href="#" target="_blank" class="text-[11px] text-blue-600 underline font-mono break-all">Verify Report Online</a>
+        </div>
+        <div class="text-right space-y-1">
+          <div class="font-serif italic text-lg text-blue-900 font-bold" id="rep-path-sign">Dr. Ananya Sen</div>
+          <div class="font-bold text-slate-800" id="rep-path-name">Dr. Ananya Sen</div>
+          <div class="text-slate-500 text-[11px]" id="rep-path-qual">MD (Pathology), FICP</div>
+          <div class="text-[10px] text-emerald-700 font-bold">✓ Electronically Signed & Validated</div>
+        </div>
+      </div>
+
+      <!-- Action Buttons Bar -->
+      <div class="border-t border-slate-200 pt-4 flex flex-wrap gap-2 justify-end">
+        <button onclick="dispatchWhatsAppReport()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-sm">
+          <span>💬 WhatsApp Link</span>
+        </button>
+        <button onclick="dispatchEmailReport()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-sm">
+          <span>✉️ Email PDF</span>
+        </button>
+        <button onclick="downloadReportPdf()" class="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-sm">
+          <span>📄 Download PDF</span>
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<script>
+  let currentActiveReportOrderId = null;
+
+  function openReportModal(orderId) {
+    currentActiveReportOrderId = orderId;
+    switchTab('reports');
+    loadReportDetails(orderId);
+  }
+
+  function searchReportByOrder() {
+    const input = document.getElementById('report-order-search-input').value.trim();
+    if (!input) return;
+    loadReportDetails(input);
+  }
+
+  function loadReportDetails(orderIdOrNo) {
+    google.script.run
+      .withSuccessHandler((report) => {
+        currentActiveReportOrderId = report.orderId;
+        renderReportPreview(report);
+      })
+      .withFailureHandler((err) => showToast(err.message, 'error'))
+      .apiCompileReportData(orderIdOrNo);
+  }
+
+  function renderReportPreview(report) {
+    document.getElementById('report-preview-container').classList.remove('hidden');
+
+    document.getElementById('rep-order-no').innerText = report.orderNo;
+    document.getElementById('rep-patient-name').innerText = report.patientName;
+    document.getElementById('rep-uhid').innerText = report.uhid;
+    document.getElementById('rep-age-gender').innerText = report.ageGender;
+    document.getElementById('rep-doctor').innerText = report.referringDoctor;
+
+    document.getElementById('rep-path-name').innerText = report.pathologistName;
+    document.getElementById('rep-path-sign').innerText = report.pathologistName;
+    document.getElementById('rep-path-qual').innerText = report.pathologistQualification;
+
+    const watermark = document.getElementById('rep-watermark-banner');
+    if (report.showWatermark) watermark.classList.remove('hidden');
+    else watermark.classList.add('hidden');
+
+    // Build Department Tables
+    const tablesContainer = document.getElementById('rep-dept-results-tables');
+    let html = '';
+
+    for (const dept in report.departments) {
+      html += `
+        <div>
+          <h3 class="text-xs font-bold uppercase tracking-wider text-slate-800 bg-slate-100 p-2 rounded mb-2">${dept}</h3>
+          <table class="min-w-full divide-y divide-slate-200">
+            <thead class="text-slate-500 font-semibold text-[11px]">
+              <tr>
+                <th class="py-1 text-left">Test Parameter</th>
+                <th class="py-1 text-left">Observed Value</th>
+                <th class="py-1 text-left">Flag</th>
+                <th class="py-1 text-left">Biological Ref Interval</th>
+                <th class="py-1 text-left">Unit</th>
+                <th class="py-1 text-left">Past Trend</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100 font-medium">
+              ${report.departments[dept].map(item => `
+                <tr class="hover:bg-slate-50">
+                  <td class="py-1.5 font-bold text-slate-800">${item.name}</td>
+                  <td class="py-1.5 font-bold ${item.flag !== 'Normal' ? 'text-red-700' : 'text-slate-900'}">${item.value}</td>
+                  <td class="py-1.5">${item.flag !== 'Normal' ? `<span class="badge-high px-1.5 py-0.5 rounded text-[10px] font-bold">${item.flag.toUpperCase()}</span>` : 'Normal'}</td>
+                  <td class="py-1.5 font-mono text-slate-600">${item.refRangeText}</td>
+                  <td class="py-1.5 text-slate-500">${item.unit}</td>
+                  <td class="py-1.5 text-slate-400 text-[11px]">${item.trends && item.trends.length > 0 ? item.trends.map(t => `${t.val} (${t.date})`).join(', ') : '-'}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    tablesContainer.innerHTML = html;
+  }
+
+  function dispatchWhatsAppReport() {
+    if (!currentActiveReportOrderId) return;
+    google.script.run
+      .withSuccessHandler((url) => {
+        window.open(url, '_blank');
+      })
+      .withFailureHandler((err) => showToast(err.message, 'error'))
+      .apiGetWhatsAppShareUrl(currentActiveReportOrderId);
+  }
+
+  function dispatchEmailReport() {
+    if (!currentActiveReportOrderId) return;
+    google.script.run
+      .withSuccessHandler((res) => {
+        showToast(res.message);
+      })
+      .withFailureHandler((err) => showToast(err.message, 'error'))
+      .apiSendReportEmail(currentActiveReportOrderId);
+  }
+
+  function downloadReportPdf() {
+    if (!currentActiveReportOrderId) return;
+    showToast('Generating pixel-perfect PDF in Google Drive...');
+    google.script.run
+      .withSuccessHandler((res) => {
+        if (res.pdfUrl) {
+          window.open(res.pdfUrl, '_blank');
+        } else {
+          showToast('PDF exported successfully to Drive.', 'info');
+        }
+      })
+      .withFailureHandler((err) => showToast(err.message, 'error'))
+      .apiGenerateReportPdf(currentActiveReportOrderId);
+  }
+</script>

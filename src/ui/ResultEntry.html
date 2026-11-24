@@ -1,0 +1,245 @@
+<!-- Departmental Result Entry & Pathologist Validation Workspace -->
+<div id="tab-results" class="tab-content hidden max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-4">
+  
+  <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+    <div>
+      <h2 class="text-base font-bold text-slate-900">Result Entry & Clinical Sign-off</h2>
+      <p class="text-xs text-slate-500">Grid entry with auto-calculated formulas, clinical reference range auto-flagging, and delta checks</p>
+    </div>
+    
+    <!-- Department Selector Filter -->
+    <div class="flex items-center gap-2">
+      <label class="text-xs font-semibold text-slate-700">Department:</label>
+      <select id="results-dept-select" onchange="loadResultsWorklist()" class="bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-semibold">
+        <option value="">All Departments</option>
+        <option value="Hematology">Hematology (CBC)</option>
+        <option value="Biochemistry">Biochemistry (LFT, KFT, Lipid, Glucose)</option>
+        <option value="Immunology">Immunology / Hormones</option>
+        <option value="Clinical Pathology">Clinical Pathology</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- Result Entry Worklist Grid -->
+  <div id="results-orders-grid" class="space-y-4">
+    <!-- Populated by JS -->
+  </div>
+
+</div>
+
+<!-- Parameter Entry Modal Dialog -->
+<div id="result-entry-modal" class="modal-backdrop fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+  <div class="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col border border-slate-200">
+    
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50 rounded-t-xl">
+      <div>
+        <h3 id="res-modal-title" class="text-base font-bold text-slate-900">Enter Results</h3>
+        <p id="res-modal-patient-info" class="text-xs text-slate-500 font-mono"></p>
+      </div>
+      <button onclick="closeAllModals()" class="text-slate-400 hover:text-slate-600 p-1">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+      </button>
+    </div>
+
+    <!-- Results Input Grid -->
+    <div class="p-6 overflow-y-auto flex-1">
+      <table class="min-w-full divide-y divide-slate-200 text-xs">
+        <thead class="bg-slate-50 text-slate-600 font-bold uppercase tracking-wider">
+          <tr>
+            <th class="px-3 py-2 text-left">Investigation</th>
+            <th class="px-3 py-2 text-left">Observed Value</th>
+            <th class="px-3 py-2 text-left">Flag</th>
+            <th class="px-3 py-2 text-left">Biological Ref Interval</th>
+            <th class="px-3 py-2 text-left">Units</th>
+            <th class="px-3 py-2 text-left">Delta Check (Past)</th>
+          </tr>
+        </thead>
+        <tbody id="result-param-rows" class="divide-y divide-slate-100">
+          <!-- Dynamic parameter rows -->
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Modal Footer Actions -->
+    <div class="flex items-center justify-between px-6 py-3 border-t border-slate-200 bg-slate-50 rounded-b-xl">
+      <div id="modal-status-badge" class="text-xs font-bold text-slate-600"></div>
+      <div class="flex items-center gap-2">
+        <button type="button" onclick="closeAllModals()" class="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg text-xs hover:bg-slate-100">Cancel</button>
+        <button type="button" onclick="saveEnteredResults(false)" class="px-4 py-2 bg-slate-700 hover:bg-slate-800 text-white font-semibold rounded-lg text-xs">Save Draft</button>
+        <button type="button" onclick="saveEnteredResults(true)" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg text-xs">Submit for Approval</button>
+        <button type="button" id="path-validate-btn" onclick="validateCurrentOrder()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs hidden">
+          Validate & Sign Off
+        </button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  let activeModalOrderId = null;
+  let activeModalSampleId = null;
+
+  function loadResultsWorklist() {
+    const dept = document.getElementById('results-dept-select').value;
+    google.script.run
+      .withSuccessHandler((worklist) => {
+        renderResultsWorklist(worklist);
+      })
+      .apiGetDepartmentWorklist(dept);
+  }
+
+  function renderResultsWorklist(worklist) {
+    const container = document.getElementById('results-orders-grid');
+    if (!worklist || worklist.length === 0) {
+      container.innerHTML = `<div class="bg-white p-8 rounded-xl text-center text-slate-400 text-xs border border-slate-200">No samples awaiting result entry for this department.</div>`;
+      return;
+    }
+
+    container.innerHTML = worklist.map(w => `
+      <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <div class="flex items-center gap-2 mb-1">
+            <span class="font-mono font-bold text-sm text-slate-900">${w.orderNo}</span>
+            <span class="text-xs px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-bold font-mono">${w.barcode}</span>
+            <span class="text-xs text-slate-500">(${w.tube})</span>
+          </div>
+          <div class="font-semibold text-slate-800 text-xs">${w.patientName} • <span class="font-mono">${w.uhid}</span> (${w.ageGender})</div>
+          <div class="text-[11px] text-slate-500 mt-1">Tests: ${w.items.map(i => i.name).join(', ')}</div>
+        </div>
+
+        <button onclick="openResultEntryModal('${w.orderId}', '${w.sampleId}', '${w.patientName}', '${w.uhid}')"
+          class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-sm whitespace-nowrap">
+          Open Worklist Entry
+        </button>
+      </div>
+    `).join('');
+  }
+
+  function openResultEntryModal(orderId, sampleId, patientName, uhid) {
+    activeModalOrderId = orderId;
+    activeModalSampleId = sampleId;
+
+    document.getElementById('res-modal-title').innerText = `Result Entry: ${patientName}`;
+    document.getElementById('res-modal-patient-info').innerText = `UHID: ${uhid} | Order: ${orderId}`;
+    document.getElementById('result-entry-modal').classList.remove('hidden');
+
+    // Show Pathologist validate button if user is Pathologist/Admin
+    const validateBtn = document.getElementById('path-validate-btn');
+    if (AppState.user && (AppState.user.role === 'Pathologist' || AppState.user.role === 'Admin')) {
+      validateBtn.classList.remove('hidden');
+    } else {
+      validateBtn.classList.add('hidden');
+    }
+
+    google.script.run
+      .withSuccessHandler((data) => {
+        renderModalParamRows(data.parameters);
+      })
+      .apiGetOrderResultsForEntry(orderId, sampleId);
+  }
+
+  function renderModalParamRows(params) {
+    const tbody = document.getElementById('result-param-rows');
+    tbody.innerHTML = params.map(p => {
+      let flagBadge = '<span class="text-slate-400">-</span>';
+      if (p.currentFlag === 'Low') flagBadge = '<span class="badge-low px-2 py-0.5 rounded text-[10px] font-bold">LOW</span>';
+      else if (p.currentFlag === 'High') flagBadge = '<span class="badge-high px-2 py-0.5 rounded text-[10px] font-bold">HIGH</span>';
+      else if (p.currentFlag === 'Critical Low' || p.currentFlag === 'Critical High') {
+        flagBadge = `<span class="badge-critical px-2 py-0.5 rounded text-[10px] font-bold">${p.currentFlag.toUpperCase()}</span>`;
+      } else if (p.currentFlag === 'Normal') {
+        flagBadge = '<span class="badge-normal px-2 py-0.5 rounded text-[10px] font-bold">NORMAL</span>';
+      }
+
+      return `
+        <tr class="hover:bg-slate-50 transition" data-test-id="${p.testId}" data-order-item-id="${p.orderItemId}">
+          <td class="px-3 py-2 font-semibold text-slate-800">
+            ${p.name}
+            ${p.isCalculated ? '<span class="text-[9px] bg-slate-100 text-slate-600 px-1 py-0.5 rounded ml-1 font-mono">CALC</span>' : ''}
+          </td>
+          <td class="px-3 py-2">
+            <input type="text" value="${p.currentValue !== undefined && p.currentValue !== null ? p.currentValue : ''}"
+              class="param-input w-24 bg-white border border-slate-300 rounded px-2 py-1 text-xs font-bold text-slate-900 focus:ring-2 focus:ring-blue-500"
+              ${p.isLocked ? 'disabled' : ''}
+              onchange="onParamValueChange(this, ${p.normalLow}, ${p.normalHigh}, ${p.criticalLow}, ${p.criticalHigh})">
+          </td>
+          <td class="px-3 py-2 flag-cell">${flagBadge}</td>
+          <td class="px-3 py-2 font-mono text-slate-600">${p.referenceRangeText || '-'}</td>
+          <td class="px-3 py-2 font-medium text-slate-500">${p.units || '-'}</td>
+          <td class="px-3 py-2 text-slate-500">
+            ${p.previousValue !== null ? `<span class="font-mono">${p.previousValue}</span> (${p.deltaFlag || 'Prior'})` : '<span class="text-slate-400">None</span>'}
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  function onParamValueChange(input, nLow, nHigh, cLow, cHigh) {
+    const val = parseFloat(input.value);
+    const row = input.closest('tr');
+    const flagCell = row.querySelector('.flag-cell');
+
+    if (isNaN(val)) {
+      flagCell.innerHTML = '<span class="text-slate-400">-</span>';
+      return;
+    }
+
+    if (cLow !== null && !isNaN(cLow) && val <= cLow) {
+      flagCell.innerHTML = '<span class="badge-critical px-2 py-0.5 rounded text-[10px] font-bold">CRITICAL LOW</span>';
+    } else if (cHigh !== null && !isNaN(cHigh) && val >= cHigh) {
+      flagCell.innerHTML = '<span class="badge-critical px-2 py-0.5 rounded text-[10px] font-bold">CRITICAL HIGH</span>';
+    } else if (!isNaN(nLow) && val < nLow) {
+      flagCell.innerHTML = '<span class="badge-low px-2 py-0.5 rounded text-[10px] font-bold">LOW</span>';
+    } else if (!isNaN(nHigh) && val > nHigh) {
+      flagCell.innerHTML = '<span class="badge-high px-2 py-0.5 rounded text-[10px] font-bold">HIGH</span>';
+    } else {
+      flagCell.innerHTML = '<span class="badge-normal px-2 py-0.5 rounded text-[10px] font-bold">NORMAL</span>';
+    }
+  }
+
+  function saveEnteredResults(submitForApproval) {
+    const rows = document.querySelectorAll('#result-param-rows tr');
+    const values = [];
+
+    rows.forEach(r => {
+      const testId = r.getAttribute('data-test-id');
+      const orderItemId = r.getAttribute('data-order-item-id');
+      const input = r.querySelector('.param-input');
+      if (input && input.value !== '') {
+        values.push({
+          testId: testId,
+          orderItemId: orderItemId,
+          value: input.value
+        });
+      }
+    });
+
+    if (values.length === 0) {
+      showToast('Please enter at least one parameter value.', 'warning');
+      return;
+    }
+
+    google.script.run
+      .withSuccessHandler((res) => {
+        showToast(res.message);
+        closeAllModals();
+        loadResultsWorklist();
+      })
+      .withFailureHandler((err) => showToast(err.message, 'error'))
+      .apiSaveResults(activeModalOrderId, activeModalSampleId, values, submitForApproval);
+  }
+
+  function validateCurrentOrder() {
+    if (!activeModalOrderId) return;
+    google.script.run
+      .withSuccessHandler((res) => {
+        showToast(res.message);
+        closeAllModals();
+        loadResultsWorklist();
+        // Prompt for report generation
+        openReportModal(activeModalOrderId);
+      })
+      .withFailureHandler((err) => showToast(err.message, 'error'))
+      .apiValidateResults(activeModalOrderId);
+  }
+</script>

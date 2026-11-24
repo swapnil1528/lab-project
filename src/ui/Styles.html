@@ -1,0 +1,97 @@
+<!-- Tailwind CSS & Clinical Styling -->
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<!-- JsBarcode Library for Client-side Barcode Rendering -->
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+
+<style>
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background-color: #F8FAFC;
+    color: #0F172A;
+  }
+  .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+  }
+  
+  /* Clinical Flag Badges */
+  .badge-normal {
+    background-color: #ECFDF5;
+    color: #065F46;
+    border: 1px solid #A7F3D0;
+  }
+  .badge-low {
+    background-color: #EFF6FF;
+    color: #1E40AF;
+    border: 1px solid #BFDBFE;
+  }
+  .badge-high {
+    background-color: #FFFBEB;
+    color: #92400E;
+    border: 1px solid #FDE68A;
+  }
+  .badge-critical {
+    background-color: #FEF2F2;
+    color: #991B1B;
+    border: 1px solid #FECACA;
+    animation: pulse-critical 2s infinite;
+  }
+  @keyframes pulse-critical {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+  }
+
+  /* Specimen Tube Cap Colors */
+  .tube-edta { border-left: 4px solid #7C3AED; } /* Lavender */
+  .tube-sst { border-left: 4px solid #FBBF24; }  /* Yellow */
+  .tube-fluoride { border-left: 4px solid #9CA3AF; } /* Grey */
+  .tube-plain { border-left: 4px solid #EF4444; } /* Red */
+  .tube-citrate { border-left: 4px solid #38BDF8; } /* Light Blue */
+
+  /* 50mm x 25mm Thermal Label Print Media Styles */
+  @media print {
+    body * {
+      visibility: hidden;
+    }
+    #label-print-area, #label-print-area * {
+      visibility: visible;
+    }
+    #label-print-area {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 50mm !important;
+      height: 25mm !important;
+      margin: 0 !important;
+      padding: 1.5mm !important;
+      page-break-after: always;
+      overflow: hidden;
+      box-sizing: border-box;
+      font-family: Arial, sans-serif;
+      color: #000 !important;
+      background: #FFF !important;
+    }
+    @page {
+      size: 50mm 25mm;
+      margin: 0;
+    }
+  }
+
+  /* Custom Scrollbar for busy front desk */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #F1F5F9;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #CBD5E1;
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #94A3B8;
+  }
+</style>

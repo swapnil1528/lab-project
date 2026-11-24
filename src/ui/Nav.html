@@ -1,0 +1,71 @@
+<!-- Navigation Header -->
+<header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div class="flex items-center justify-between h-16">
+      
+      <!-- Logo & Brand -->
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-lg bg-blue-600 flex items-center justify-center text-white font-bold text-xl shadow-md">
+          A
+        </div>
+        <div>
+          <h1 id="nav-lab-name" class="font-bold text-slate-900 text-lg leading-tight">Arogya Diagnostics</h1>
+          <p class="text-xs text-slate-500 font-medium">Laboratory Information System</p>
+        </div>
+      </div>
+
+      <!-- Global Search Bar (Alt+S) -->
+      <div class="hidden md:flex flex-1 max-w-md mx-6">
+        <div class="relative w-full">
+          <input type="text" id="global-search-input"
+            class="w-full bg-slate-100 border border-slate-300 text-slate-900 text-sm rounded-lg focus:ring-2 focus:ring-blue-500 focus:bg-white pl-10 pr-4 py-2 transition"
+            placeholder="Search Patient (UHID, Mobile, Name) - Alt+S..."
+            oninput="handleGlobalSearch(this.value)">
+          <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+          </div>
+          <!-- Dropdown search results -->
+          <div id="global-search-dropdown" class="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-xl hidden z-50 max-h-80 overflow-y-auto"></div>
+        </div>
+      </div>
+
+      <!-- Action Buttons & User Profile -->
+      <div class="flex items-center gap-3">
+        <!-- New Patient Button (Alt+N) -->
+        <button onclick="openPatientModal()" 
+          class="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-3.5 py-2 rounded-lg shadow-sm transition">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+          <span data-i18n="newPatient">New Patient</span>
+        </button>
+
+        <!-- Language Switcher Toggle -->
+        <button id="lang-toggle-btn" onclick="toggleLanguage()"
+          class="border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-semibold px-2.5 py-2 rounded-lg transition">
+          हिन्दी
+        </button>
+
+        <!-- User Role Badge -->
+        <div class="flex items-center gap-2 pl-2 border-l border-slate-200">
+          <div class="text-right hidden sm:block">
+            <div id="user-display-name" class="text-xs font-bold text-slate-800">Staff</div>
+            <div id="user-role-badge" class="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 inline-block">Role</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Primary Module Tabs -->
+  <div class="bg-slate-50 border-t border-slate-200 px-4 sm:px-6 lg:px-8">
+    <nav class="flex space-x-1 sm:space-x-4 overflow-x-auto py-2 text-sm">
+      <button id="nav-dashboard" onclick="switchTab('dashboard')" class="nav-link px-3 py-1.5 rounded-md font-semibold bg-blue-50 text-blue-700 whitespace-nowrap" data-i18n="dashboard">Dashboard</button>
+      <button id="nav-orders" onclick="switchTab('orders')" class="nav-link px-3 py-1.5 rounded-md text-slate-600 hover:bg-slate-200 whitespace-nowrap" data-i18n="orders">Orders & Billing</button>
+      <button id="nav-phlebotomy" onclick="switchTab('phlebotomy')" class="nav-link px-3 py-1.5 rounded-md text-slate-600 hover:bg-slate-200 whitespace-nowrap" data-i18n="phlebotomy">Phlebotomy Queue</button>
+      <button id="nav-results" onclick="switchTab('results')" class="nav-link px-3 py-1.5 rounded-md text-slate-600 hover:bg-slate-200 whitespace-nowrap" data-i18n="results">Result Entry</button>
+      <button id="nav-reports" onclick="switchTab('reports')" class="nav-link px-3 py-1.5 rounded-md text-slate-600 hover:bg-slate-200 whitespace-nowrap" data-i18n="reports">Reports & Dispatch</button>
+      <button id="nav-inventory" onclick="switchTab('inventory')" class="nav-link px-3 py-1.5 rounded-md text-slate-600 hover:bg-slate-200 whitespace-nowrap" data-i18n="inventory">Inventory</button>
+      <button id="nav-admin" onclick="switchTab('admin')" class="nav-link px-3 py-1.5 rounded-md text-slate-600 hover:bg-slate-200 whitespace-nowrap" data-i18n="admin">Admin</button>
+    </nav>
+  </div>
+</header>

@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Arogya LIS - Diagnostic Laboratory Information System</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <?!= include('ui/Styles'); ?>
+</head>
+<body class="bg-slate-50 min-h-screen flex flex-col justify-between">
+
+  <!-- Toast Notification Overlay -->
+  <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col items-end"></div>
+
+  <div>
+    <!-- Top Navigation -->
+    <?!= include('ui/Nav'); ?>
+
+    <!-- Main Content Area -->
+    <main>
+      
+      <!-- 1. Operational Dashboard Tab -->
+      <div id="tab-dashboard" class="tab-content max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+        
+        <!-- Quick Action Bar -->
+        <div class="flex flex-wrap items-center justify-between gap-3 bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+          <div>
+            <h2 class="text-base font-bold text-slate-900">Today's Lab Overview</h2>
+            <p id="dash-today-date" class="text-xs text-slate-500 font-medium">Live Diagnostic Metrics</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="openPatientModal()" class="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-sm transition">
+              + New Registration (Alt+N)
+            </button>
+            <button onclick="switchTab('orders')" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-sm transition">
+              + Book Order (Alt+O)
+            </button>
+          </div>
+        </div>
+
+        <!-- KPI Statistic Cards -->
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+          
+          <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+            <span class="text-[11px] font-semibold text-slate-500 block uppercase" data-i18n="todayRevenue">Net Revenue</span>
+            <div id="kpi-today-revenue" class="text-xl font-bold text-slate-900 font-mono mt-1">₹0.00</div>
+            <span class="text-[10px] text-emerald-600 font-semibold" id="kpi-collected-revenue">₹0 collected</span>
+          </div>
+
+          <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+            <span class="text-[11px] font-semibold text-slate-500 block uppercase" data-i18n="todayOrders">Today's Orders</span>
+            <div id="kpi-today-orders" class="text-xl font-bold text-slate-900 font-mono mt-1">0</div>
+            <span class="text-[10px] text-slate-400">Total bookings</span>
+          </div>
+
+          <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+            <span class="text-[11px] font-semibold text-slate-500 block uppercase">Registrations</span>
+            <div id="kpi-today-patients" class="text-xl font-bold text-blue-600 font-mono mt-1">0</div>
+            <span class="text-[10px] text-slate-400">New patients</span>
+          </div>
+
+          <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+            <span class="text-[11px] font-semibold text-slate-500 block uppercase">To Collect</span>
+            <div id="kpi-pending-collection" class="text-xl font-bold text-amber-600 font-mono mt-1">0</div>
+            <span class="text-[10px] text-amber-600 font-semibold">Phlebotomy queue</span>
+          </div>
+
+          <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+            <span class="text-[11px] font-semibold text-slate-500 block uppercase">Awaiting Sign-off</span>
+            <div id="kpi-awaiting-validation" class="text-xl font-bold text-purple-600 font-mono mt-1">0</div>
+            <span class="text-[10px] text-purple-600 font-semibold">Pathologist review</span>
+          </div>
+
+          <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+            <span class="text-[11px] font-semibold text-slate-500 block uppercase">TAT Breaches</span>
+            <div id="kpi-tat-breaches" class="text-xl font-bold text-red-600 font-mono mt-1">0</div>
+            <span class="text-[10px] text-red-600 font-semibold">> 6h pending</span>
+          </div>
+
+        </div>
+
+        <!-- Analytics Distribution: Top Tests & Top Doctors -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          
+          <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 space-y-3">
+            <h3 class="text-sm font-bold text-slate-900">Most Frequently Ordered Tests</h3>
+            <div id="top-tests-list" class="space-y-2 text-xs">
+              <div class="text-slate-400 py-4 text-center">Loading diagnostic distributions...</div>
+            </div>
+          </div>
+
+          <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 space-y-3">
+            <h3 class="text-sm font-bold text-slate-900">Referring Physician Volume</h3>
+            <div id="top-doctors-list" class="space-y-2 text-xs">
+              <div class="text-slate-400 py-4 text-center">Loading referral distributions...</div>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- 2. Orders & Billing Tab -->
+      <?!= include('ui/OrderBilling'); ?>
+
+      <!-- 3. Phlebotomy & Accessioning Tab -->
+      <?!= include('ui/SampleTracking'); ?>
+
+      <!-- 4. Result Entry & Validation Tab -->
+      <?!= include('ui/ResultEntry'); ?>
+
+      <!-- 5. Reports & Dispatch Tab -->
+      <?!= include('ui/ReportView'); ?>
+
+      <!-- 6. Inventory Tab -->
+      <div id="tab-inventory" class="tab-content hidden max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-4">
+        <div class="flex items-center justify-between bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+          <div>
+            <h2 class="text-base font-bold text-slate-900">Reagent & Consumable Inventory</h2>
+            <p class="text-xs text-slate-500">Stock thresholds, batch expiry tracking, and automatic reorder alerts</p>
+          </div>
+          <button onclick="triggerInventoryAlertCheck()" class="px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-semibold shadow-sm">
+            Check Low Stock & Send Alert
+          </button>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+          <table class="min-w-full divide-y divide-slate-200 text-xs">
+            <thead class="bg-slate-50 text-slate-600 font-bold uppercase tracking-wider">
+              <tr>
+                <th class="px-4 py-3 text-left">Code / Material</th>
+                <th class="px-4 py-3 text-left">Category</th>
+                <th class="px-4 py-3 text-left">Current Stock</th>
+                <th class="px-4 py-3 text-left">Reorder Threshold</th>
+                <th class="px-4 py-3 text-left">Batch / Expiry</th>
+                <th class="px-4 py-3 text-left">Status</th>
+                <th class="px-4 py-3 text-right">Adjust</th>
+              </tr>
+            </thead>
+            <tbody id="inventory-table-body" class="divide-y divide-slate-100">
+              <tr><td colspan="7" class="px-4 py-8 text-center text-slate-400">Loading inventory records...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 7. Admin Tab -->
+      <div id="tab-admin" class="tab-content hidden max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+        <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex justify-between items-center">
+          <div>
+            <h2 class="text-base font-bold text-slate-900">System Administration & Audit</h2>
+            <p class="text-xs text-slate-500">Lab profile settings, staff role management, and DPDP 2023 append-only audit trail</p>
+          </div>
+          <button onclick="initOwnerReportsSheet()" class="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-sm">
+            Refresh Owner 'Reports' Sheet
+          </button>
+        </div>
+
+        <!-- Audit Log View -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 space-y-3">
+          <h3 class="text-sm font-bold text-slate-900">Recent Immutable Audit Events</h3>
+          <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-slate-200 text-xs">
+              <thead class="bg-slate-50 text-slate-500 font-bold uppercase">
+                <tr>
+                  <th class="px-3 py-2 text-left">Timestamp (IST)</th>
+                  <th class="px-3 py-2 text-left">User</th>
+                  <th class="px-3 py-2 text-left">Role</th>
+                  <th class="px-3 py-2 text-left">Action</th>
+                  <th class="px-3 py-2 text-left">Entity</th>
+                  <th class="px-3 py-2 text-left">Details</th>
+                </tr>
+              </thead>
+              <tbody id="admin-audit-table-body" class="divide-y divide-slate-100 font-mono text-[11px]">
+                <tr><td colspan="6" class="px-3 py-6 text-center text-slate-400">Loading audit log...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- Registration Modal -->
+  <?!= include('ui/PatientModal'); ?>
+
+  <!-- Footer -->
+  <footer class="bg-white border-t border-slate-200 py-3 text-center text-xs text-slate-400">
+    Arogya Diagnostic Laboratory Information System &copy; 2026 • DPDP Act 2023 Compliant • Powered by Google Workspace
+  </footer>
+
+  <!-- Scripts -->
+  <?!= include('ui/Scripts'); ?>
+
+  <script>
+    function loadDashboardData() {
+      if (typeof google === 'undefined' || !google.script) return;
+      google.script.run
+        .withSuccessHandler((dash) => {
+          document.getElementById('dash-today-date').innerText = `Live Diagnostic Status for ${dash.todayDate}`;
+          document.getElementById('kpi-today-revenue').innerText = '₹' + dash.kpis.todayRevenueNet.toFixed(2);
+          document.getElementById('kpi-collected-revenue').innerText = `₹${dash.kpis.todayRevenueCollected.toFixed(2)} collected`;
+          document.getElementById('kpi-today-orders').innerText = dash.kpis.todayOrdersCount;
+          document.getElementById('kpi-today-patients').innerText = dash.kpis.todayPatients;
+          document.getElementById('kpi-pending-collection').innerText = dash.kpis.pendingCollection;
+          document.getElementById('kpi-awaiting-validation').innerText = dash.kpis.awaitingValidation;
+          document.getElementById('kpi-tat-breaches').innerText = dash.kpis.tatBreaches;
+
+          // Render Top Tests
+          const testsEl = document.getElementById('top-tests-list');
+          if (dash.topTests.length > 0) {
+            testsEl.innerHTML = dash.topTests.map(t => `
+              <div class="flex justify-between items-center p-2 bg-slate-50 rounded">
+                <span class="font-semibold text-slate-800">${t.name}</span>
+                <span class="font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded font-mono">${t.count} orders</span>
+              </div>
+            `).join('');
+          } else {
+            testsEl.innerHTML = `<div class="text-slate-400 py-2 text-center">No tests conducted today yet.</div>`;
+          }
+
+          // Render Top Doctors
+          const docsEl = document.getElementById('top-doctors-list');
+          if (dash.topDoctors.length > 0) {
+            docsEl.innerHTML = dash.topDoctors.map(d => `
+              <div class="flex justify-between items-center p-2 bg-slate-50 rounded">
+                <span class="font-semibold text-slate-800">${d.name}</span>
+                <span class="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded font-mono">${d.count} referrals</span>
+              </div>
+            `).join('');
+          } else {
+            docsEl.innerHTML = `<div class="text-slate-400 py-2 text-center">No doctor referrals logged today.</div>`;
+          }
+        })
+        .apiGetOperationalDashboard();
+    }
+
+    function loadInventoryList() {
+      google.script.run
+        .withSuccessHandler((list) => {
+          const tbody = document.getElementById('inventory-table-body');
+          tbody.innerHTML = list.map(item => `
+            <tr class="hover:bg-slate-50">
+              <td class="px-4 py-2.5">
+                <div class="font-bold text-slate-900">${item.name}</div>
+                <div class="font-mono text-slate-500">${item.itemCode}</div>
+              </td>
+              <td class="px-4 py-2.5 font-medium text-slate-700">${item.category}</td>
+              <td class="px-4 py-2.5 font-bold font-mono text-slate-900">${item.currentStock} ${item.unitOfMeasure}</td>
+              <td class="px-4 py-2.5 font-mono text-slate-500">${item.minReorderLevel}</td>
+              <td class="px-4 py-2.5 text-slate-600">${item.batchNumber} (Exp: ${item.expiryDate})</td>
+              <td class="px-4 py-2.5">
+                <span class="px-2 py-0.5 rounded text-[11px] font-bold ${
+                  item.alertStatus === 'Optimal' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'
+                }">${item.alertStatus}</span>
+              </td>
+              <td class="px-4 py-2.5 text-right space-x-1">
+                <button onclick="adjustInventory('${item.id}', 50)" class="px-2 py-1 bg-emerald-100 text-emerald-800 rounded font-bold">+50</button>
+                <button onclick="adjustInventory('${item.id}', -10)" class="px-2 py-1 bg-slate-200 text-slate-700 rounded font-bold">-10</button>
+              </td>
+            </tr>
+          `).join('');
+        })
+        .apiGetInventoryList();
+    }
+
+    function adjustInventory(id, delta) {
+      google.script.run
+        .withSuccessHandler((res) => {
+          showToast(res.message);
+          loadInventoryList();
+        })
+        .apiAdjustStock(id, delta, 'Manual adjustment via Web UI');
+    }
+
+    function triggerInventoryAlertCheck() {
+      showToast('Evaluating inventory reorder levels...');
+      google.script.run
+        .withSuccessHandler((res) => showToast(res.message, res.alertsFound > 0 ? 'warning' : 'success'))
+        .checkLowStockAndAlert();
+    }
+
+    function loadAdminSettings() {
+      google.script.run
+        .withSuccessHandler((res) => {
+          const tbody = document.getElementById('admin-audit-table-body');
+          if (res.logs && res.logs.length > 0) {
+            tbody.innerHTML = res.logs.slice(0, 15).map(l => `
+              <tr class="hover:bg-slate-50">
+                <td class="px-3 py-1.5 text-slate-600">${l.timestamp.substring(0, 19).replace('T', ' ')}</td>
+                <td class="px-3 py-1.5 font-bold text-slate-900">${l.user_email}</td>
+                <td class="px-3 py-1.5 text-slate-500">${l.role}</td>
+                <td class="px-3 py-1.5"><span class="px-1.5 py-0.5 bg-blue-100 text-blue-800 rounded font-bold">${l.action}</span></td>
+                <td class="px-3 py-1.5 text-slate-700">${l.entity_type} (${l.entity_id})</td>
+                <td class="px-3 py-1.5 text-slate-500 truncate max-w-xs">${l.details_json}</td>
+              </tr>
+            `).join('');
+          }
+        })
+        .apiGetAuditLogs(20, 0);
+    }
+
+    function initOwnerReportsSheet() {
+      showToast('Initializing Owner Reports tab with QUERY formulas...');
+      google.script.run
+        .withSuccessHandler((res) => showToast(res.message))
+        .apiInitOwnerReportsSheet();
+    }
+  </script>
+</body>
+</html>

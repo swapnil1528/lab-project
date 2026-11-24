@@ -1,0 +1,199 @@
+<!-- Core Client Scripts, State Controller, Keyboard Navigation & i18n -->
+<script>
+  // Global Application State
+  const AppState = {
+    user: null,
+    activeTab: 'dashboard',
+    currentLanguage: 'en',
+    cart: [],
+    catalog: { tests: [], panels: [] },
+    activeOrderId: null,
+    activePatientUhid: null
+  };
+
+  // Bilingual Dictionary (English & Hindi)
+  const i18n = {
+    en: {
+      appTitle: "Arogya LIS",
+      dashboard: "Dashboard",
+      patients: "Patients",
+      orders: "Orders & Billing",
+      phlebotomy: "Phlebotomy",
+      results: "Result Entry",
+      reports: "Reports & Dispatch",
+      inventory: "Inventory",
+      admin: "Admin",
+      newPatient: "New Patient (Alt+N)",
+      searchPlaceholder: "Search by UHID, Mobile, or Patient Name (Alt+S)...",
+      registerPatient: "Register Patient",
+      dpdpConsent: "Patient consents to processing of medical diagnostic data under DPDP Act 2023",
+      createOrder: "Create Order (Alt+O)",
+      collectSample: "Mark Collected",
+      receiveSample: "Receive in Lab",
+      rejectSample: "Reject Specimen",
+      saveDraft: "Save Draft",
+      submitValidation: "Submit for Approval",
+      validateSign: "Validate & Sign",
+      amendResult: "Amend Result",
+      shareWhatsApp: "Send via WhatsApp",
+      emailReport: "Email Report",
+      downloadPdf: "Download PDF",
+      todayRevenue: "Today's Revenue",
+      todayOrders: "Today's Orders",
+      pendingSamples: "Pending Samples",
+      awaitingApproval: "Awaiting Validation"
+    },
+    hi: {
+      appTitle: "आरोग्य एल.आई.एस",
+      dashboard: "डैशबोर्ड",
+      patients: "मरीज़",
+      orders: "ऑर्डर व बिलिंग",
+      phlebotomy: "सैंपल संग्रह",
+      results: "जाँच परिणाम",
+      reports: "रिपोर्ट वितरण",
+      inventory: "स्टॉक प्रबंधन",
+      admin: "प्रशासन",
+      newPatient: "नया मरीज़ (Alt+N)",
+      searchPlaceholder: "यू.एच.आई.डी, मोबाइल या नाम से खोजें (Alt+S)...",
+      registerPatient: "मरीज़ पंजीकरण",
+      dpdpConsent: "मरीज़ DPDP अधिनियम 2023 के तहत नैदानिक डेटा उपयोग की सहमति देता है",
+      createOrder: "ऑर्डर बनाएं (Alt+O)",
+      collectSample: "सैंपल लिया गया",
+      receiveSample: "लैब में प्राप्त",
+      rejectSample: "सैंपल अस्वीकार",
+      saveDraft: "ड्राफ्ट सहेजें",
+      submitValidation: "अनुमोदन हेतु भेजें",
+      validateSign: "सत्यापित व हस्ताक्षर करें",
+      amendResult: "परिणाम संशोधित करें",
+      shareWhatsApp: "व्हाट्सएप पर भेजें",
+      emailReport: "ईमेल भेजें",
+      downloadPdf: "पीडीएफ डाउनलोड",
+      todayRevenue: "आज का राजस्व",
+      todayOrders: "आज के कुल ऑर्डर",
+      pendingSamples: "लंबित सैंपल",
+      awaitingApproval: "सत्यापन हेतु लंबित"
+    }
+  };
+
+  function t(key) {
+    return (i18n[AppState.currentLanguage] && i18n[AppState.currentLanguage][key]) || i18n['en'][key] || key;
+  }
+
+  function toggleLanguage() {
+    AppState.currentLanguage = AppState.currentLanguage === 'en' ? 'hi' : 'en';
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+      const key = el.getAttribute('data-i18n');
+      if (key && t(key)) el.innerText = t(key);
+    });
+    const langBtn = document.getElementById('lang-toggle-btn');
+    if (langBtn) langBtn.innerText = AppState.currentLanguage === 'en' ? 'हिन्दी' : 'English';
+    showToast('Language switched to ' + (AppState.currentLanguage === 'en' ? 'English' : 'Hindi'), 'info');
+  }
+
+  // Toast Notification System
+  function showToast(message, type = 'success') {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+
+    const toast = document.createElement('div');
+    const colorClass = type === 'error' ? 'bg-red-600' : (type === 'warning' ? 'bg-amber-600' : (type === 'info' ? 'bg-blue-600' : 'bg-emerald-600'));
+    toast.className = `flex items-center gap-2 text-white text-sm px-4 py-3 rounded-lg shadow-lg mb-2 transition-all transform duration-300 ease-out ${colorClass}`;
+    toast.innerHTML = `<span>${message}</span>`;
+
+    container.appendChild(toast);
+    setTimeout(() => {
+      toast.classList.add('opacity-0', 'translate-x-4');
+      setTimeout(() => toast.remove(), 300);
+    }, 4000);
+  }
+
+  // Front-Desk Keyboard Shortcuts
+  window.addEventListener('keydown', (e) => {
+    // Alt + N: New Patient
+    if (e.altKey && e.key.toLowerCase() === 'n') {
+      e.preventDefault();
+      openPatientModal();
+    }
+    // Alt + S: Focus Global Search
+    if (e.altKey && e.key.toLowerCase() === 's') {
+      e.preventDefault();
+      const sInput = document.getElementById('global-search-input');
+      if (sInput) sInput.focus();
+    }
+    // Alt + O: Open Billing Cart
+    if (e.altKey && e.key.toLowerCase() === 'o') {
+      e.preventDefault();
+      switchTab('orders');
+    }
+    // Esc: Close any open modal
+    if (e.key === 'Escape') {
+      closeAllModals();
+    }
+  });
+
+  function closeAllModals() {
+    document.querySelectorAll('.modal-backdrop').forEach(m => m.classList.add('hidden'));
+  }
+
+  // Router Tab Switching
+  function switchTab(tabName) {
+    AppState.activeTab = tabName;
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+    document.querySelectorAll('.nav-link').forEach(el => {
+      el.classList.remove('bg-blue-50', 'text-blue-700', 'font-semibold');
+      el.classList.add('text-slate-600');
+    });
+
+    const activeSection = document.getElementById('tab-' + tabName);
+    if (activeSection) activeSection.classList.remove('hidden');
+
+    const activeNav = document.getElementById('nav-' + tabName);
+    if (activeNav) {
+      activeNav.classList.remove('text-slate-600');
+      activeNav.classList.add('bg-blue-50', 'text-blue-700', 'font-semibold');
+    }
+
+    // Trigger tab-specific loaders
+    if (tabName === 'dashboard') loadDashboardData();
+    if (tabName === 'phlebotomy') loadPhlebotomyWorklist();
+    if (tabName === 'results') loadResultsWorklist();
+    if (tabName === 'inventory') loadInventoryList();
+    if (tabName === 'admin') loadAdminSettings();
+  }
+
+  // App Initialization
+  document.addEventListener('DOMContentLoaded', () => {
+    // Load session context from server
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler((ctx) => {
+          AppState.user = ctx;
+          renderUserContext(ctx);
+          loadCatalog();
+          loadDashboardData();
+        })
+        .withFailureHandler((err) => showToast(err.message, 'error'))
+        .apiGetContext();
+    }
+  });
+
+  function renderUserContext(ctx) {
+    const nameEl = document.getElementById('user-display-name');
+    const roleEl = document.getElementById('user-role-badge');
+    const labNameEl = document.getElementById('nav-lab-name');
+
+    if (nameEl) nameEl.innerText = ctx.fullName || ctx.email;
+    if (roleEl) roleEl.innerText = ctx.role;
+    if (labNameEl && ctx.labProfile) labNameEl.innerText = ctx.labProfile.name;
+  }
+
+  function loadCatalog() {
+    if (typeof google === 'undefined' || !google.script) return;
+    google.script.run
+      .withSuccessHandler((cat) => {
+        AppState.catalog = cat;
+        if (typeof renderCatalogCart === 'function') renderCatalogCart();
+      })
+      .apiGetCatalog();
+  }
+</script>

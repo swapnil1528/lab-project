@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Arogya Diagnostics - Secure Report Verification Portal</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', sans-serif; background-color: #F8FAFC; }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between">
+
+  <!-- Public Header -->
+  <header class="bg-white border-b border-slate-200 py-4 px-6 shadow-sm">
+    <div class="max-w-4xl mx-auto flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-lg bg-blue-600 flex items-center justify-center text-white font-bold text-xl">A</div>
+        <div>
+          <h1 class="font-bold text-slate-900 text-lg">Arogya Diagnostic & Research Laboratory</h1>
+          <p class="text-xs text-slate-500">DPDP Act 2023 Compliant Patient Verification Portal</p>
+        </div>
+      </div>
+      <span class="px-2.5 py-1 bg-emerald-100 text-emerald-800 text-xs font-bold rounded-full">Secure 256-bit SSL</span>
+    </div>
+  </header>
+
+  <main class="max-w-xl mx-auto p-6 w-full flex-1 flex flex-col justify-center">
+
+    <!-- Step 1: Mobile Number Challenge Form -->
+    <div id="step-mobile-box" class="bg-white p-6 rounded-2xl shadow-lg border border-slate-200 space-y-4">
+      <div class="text-center space-y-1">
+        <h2 class="text-lg font-bold text-slate-900">Patient Verification</h2>
+        <p class="text-xs text-slate-500">Please enter your 10-digit registered mobile number to receive an access OTP.</p>
+      </div>
+
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">Registered Mobile Number</label>
+          <div class="relative">
+            <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400 text-sm font-bold">+91</span>
+            <input type="tel" id="portal-mobile-input" pattern="[6-9][0-9]{9}" placeholder="9820012345"
+              class="w-full bg-slate-50 border border-slate-300 rounded-lg pl-12 pr-4 py-2.5 text-sm font-bold text-slate-900 focus:ring-2 focus:ring-blue-500">
+          </div>
+        </div>
+
+        <button onclick="requestOtp()" id="req-otp-btn"
+          class="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm rounded-lg shadow-sm transition">
+          Send Verification OTP
+        </button>
+      </div>
+    </div>
+
+    <!-- Step 2: OTP Verification Form -->
+    <div id="step-otp-box" class="hidden bg-white p-6 rounded-2xl shadow-lg border border-slate-200 space-y-4">
+      <div class="text-center space-y-1">
+        <h2 class="text-lg font-bold text-slate-900">Enter OTP Code</h2>
+        <p id="otp-hint-msg" class="text-xs text-slate-500">A 6-digit OTP has been sent. Valid for 10 minutes.</p>
+      </div>
+
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">6-Digit Code</label>
+          <input type="text" id="portal-otp-input" maxlength="6" placeholder="123456"
+            class="w-full bg-slate-50 border border-slate-300 rounded-lg px-4 py-2.5 text-center text-lg font-mono font-bold tracking-widest text-slate-900 focus:ring-2 focus:ring-blue-500">
+        </div>
+
+        <button onclick="verifyOtp()" id="verify-otp-btn"
+          class="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm rounded-lg shadow-sm transition">
+          Verify & View Report
+        </button>
+      </div>
+    </div>
+
+    <!-- Step 3: Verified Report Results Viewer -->
+    <div id="portal-results-box" class="hidden bg-white p-6 rounded-2xl shadow-lg border border-slate-200 space-y-6">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-200">
+        <div>
+          <h3 id="p-res-name" class="font-bold text-slate-900"></h3>
+          <p id="p-res-uhid" class="text-xs text-slate-500 font-mono"></p>
+        </div>
+        <span class="px-2 py-1 bg-emerald-100 text-emerald-800 text-xs font-bold rounded">Validated</span>
+      </div>
+
+      <div id="p-res-tables" class="space-y-4 text-xs">
+        <!-- Injected by JS -->
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="bg-white border-t border-slate-200 py-3 text-center text-xs text-slate-400">
+    &copy; 2026 Arogya Diagnostic & Research Laboratory. All rights reserved.
+  </footer>
+
+  <script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const token = urlParams.get('token') || '<?= token ?>';
+    let currentMobile = '';
+
+    function requestOtp() {
+      const mob = document.getElementById('portal-mobile-input').value.trim();
+      if (!mob || mob.length !== 10) {
+        alert('Please enter a valid 10-digit mobile number.');
+        return;
+      }
+
+      currentMobile = mob;
+      const btn = document.getElementById('req-otp-btn');
+      btn.innerText = 'Sending OTP...';
+      btn.disabled = true;
+
+      google.script.run
+        .withSuccessHandler((res) => {
+          btn.innerText = 'Send Verification OTP';
+          btn.disabled = false;
+          document.getElementById('step-mobile-box').classList.add('hidden');
+          document.getElementById('step-otp-box').classList.remove('hidden');
+          document.getElementById('otp-hint-msg').innerText = `OTP sent to ${res.maskedMobile}. Valid for 10 minutes.`;
+        })
+        .withFailureHandler((err) => {
+          btn.innerText = 'Send Verification OTP';
+          btn.disabled = false;
+          alert(err.message);
+        })
+        .apiPortalRequestOtp(token, mob);
+    }
+
+    function verifyOtp() {
+      const otp = document.getElementById('portal-otp-input').value.trim();
+      if (!otp || otp.length !== 6) {
+        alert('Please enter the 6-digit OTP code.');
+        return;
+      }
+
+      const btn = document.getElementById('verify-otp-btn');
+      btn.innerText = 'Verifying...';
+      btn.disabled = true;
+
+      google.script.run
+        .withSuccessHandler((res) => {
+          btn.innerText = 'Verify & View Report';
+          btn.disabled = false;
+          document.getElementById('step-otp-box').classList.add('hidden');
+          renderPortalResults(res);
+        })
+        .withFailureHandler((err) => {
+          btn.innerText = 'Verify & View Report';
+          btn.disabled = false;
+          alert(err.message);
+        })
+        .apiPortalVerifyOtp(token, currentMobile, otp);
+    }
+
+    function renderPortalResults(res) {
+      document.getElementById('portal-results-box').classList.remove('hidden');
+      document.getElementById('p-res-name').innerText = res.patient.fullName;
+      document.getElementById('p-res-uhid').innerText = `UHID: ${res.patient.uhid} | Age/Gender: ${res.patient.age}Y/${res.patient.gender}`;
+
+      const container = document.getElementById('p-res-tables');
+      let html = '';
+      const rep = res.currentReport;
+
+      for (const dept in rep.departments) {
+        html += `
+          <div>
+            <h4 class="font-bold text-slate-800 bg-slate-100 p-2 rounded mb-2">${dept}</h4>
+            <div class="space-y-2">
+              ${rep.departments[dept].map(item => `
+                <div class="p-2 border border-slate-200 rounded flex justify-between items-center">
+                  <div>
+                    <div class="font-bold text-slate-900">${item.name}</div>
+                    <div class="text-[10px] text-slate-500">Ref: ${item.refRangeText}</div>
+                  </div>
+                  <div class="text-right">
+                    <span class="text-sm font-bold ${item.flag !== 'Normal' ? 'text-red-600' : 'text-slate-900'}">${item.value} ${item.unit}</span>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      container.innerHTML = html;
+    }
+  </script>
+</body>
+</html>
