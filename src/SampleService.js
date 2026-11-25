@@ -325,7 +325,7 @@ const SampleService = {
     SessionContext.requirePermission(PERMISSIONS.SAMPLE_COLLECT, 'View Phlebotomy Worklist');
 
     const samples = Repository.getTable('Samples', false).filter(s => s.status === 'Active');
-    if (!statusFilter) return samples;
+    if (!statusFilter || statusFilter === 'All') return samples;
     return samples.filter(s => s.collection_status === statusFilter);
   },
 

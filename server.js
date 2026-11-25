@@ -10,6 +10,7 @@ const path = require('path');
 
 const PORT = process.env.PORT || 3000;
 const SRC_DIR = path.join(__dirname, 'src');
+const APPS_SCRIPT_WEBAPP_URL = process.env.APPS_SCRIPT_URL || 'https://script.google.com/macros/s/AKfycbzP6tlEBmrZQRw4GnqEl8iGSSNByteMTdJtvvGpE9Aa5t4nDPO5_qziwr3h5WsVeTg/exec';
 
 // -------------------------------------------------------------
 // 1. Google Workspace In-Memory Mocks
@@ -295,7 +296,7 @@ const server = http.createServer((req, res) => {
       if (page === 'portal') {
         html = renderHtml('ui/PatientPortal');
       } else {
-        html = renderHtml('ui/Index');
+        html = renderHtml('ui/ReactApp');
       }
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(html);
@@ -322,12 +323,100 @@ const server = http.createServer((req, res) => {
     let bodyStr = '';
 
     req.on('data', chunk => { bodyStr += chunk; });
-    req.on('end', () => {
+    req.on('end', async () => {
       try {
         const payload = bodyStr ? JSON.parse(bodyStr) : { args: [] };
         const args = payload.args || [];
 
-        // Check if WebApp or Services export this function
+        // 1. Try forwarding to remote Google Apps Script Web App (Connected to live Google Sheet)
+        if (APPS_SCRIPT_WEBAPP_URL && !APPS_SCRIPT_WEBAPP_URL.includes('PASTE_')) {
+          try {
+            const gasResp = await fetch(APPS_SCRIPT_WEBAPP_URL, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: methodName, args: args }),
+              redirect: 'follow'
+            });
+            const textResp = await gasResp.text();
+            try {
+              const gasData = JSON.parse(textResp);
+              if (gasData.success !== undefined) {
+                if (gasData.success) {
+                  console.log(`[Google Sheets Remote Sync] Successfully executed ${methodName} on Google Sheet!`);
+
+                  // Auto-generate specimen sample tubes on cloud Sheet after order creation
+                  if (methodName === 'apiCreateOrder' && gasData.result && gasData.result.order && gasData.result.order.id) {
+                    try {
+                      await fetch(APPS_SCRIPT_WEBAPP_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ action: 'apiGenerateSamplesForOrder', args: [gasData.result.order.id] }),
+                        redirect: 'follow'
+                      });
+                    } catch (e) {
+                      console.warn('[Auto Sample Generation Warning]:', e.message);
+                    }
+                  }
+
+                  // Merge 'Collected' samples into department worklist if cloud Code.gs only returned 'Received'/'In Process'
+                  if (methodName === 'apiGetDepartmentWorklist' && Array.isArray(gasData.result)) {
+                    try {
+                      const deptFilter = args[0] || '';
+                      const phlebResp = await fetch(APPS_SCRIPT_WEBAPP_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ action: 'apiGetPhlebotomyWorklist', args: [''] }),
+                        redirect: 'follow'
+                      });
+                      const phlebData = await phlebResp.json();
+                      if (phlebData && phlebData.success && Array.isArray(phlebData.result)) {
+                        const existingIds = new Set(gasData.result.map(w => w.sampleId));
+                        const collectedExtras = phlebData.result
+                          .filter(s =>
+                            s.status === 'Active' &&
+                            (s.collection_status === 'Collected' || s.collection_status === 'Received' || s.collection_status === 'In Process') &&
+                            !existingIds.has(s.id) &&
+                            (!deptFilter || s.department === deptFilter)
+                          )
+                          .map(s => ({
+                            sampleId: s.id,
+                            barcode: s.barcode,
+                            orderId: s.order_id,
+                            orderNo: s.order_id,
+                            uhid: s.uhid,
+                            patientName: s.patient_name,
+                            ageGender: '',
+                            department: s.department,
+                            tube: s.container_tube || s.sample_type,
+                            status: s.collection_status,
+                            items: []
+                          }));
+                        gasData.result = [...gasData.result, ...collectedExtras];
+                      }
+                    } catch (e) {
+                      console.warn('[Worklist Merge Warning]:', e.message);
+                    }
+                  }
+
+                  res.writeHead(200, { 'Content-Type': 'application/json' });
+                  res.end(JSON.stringify({ result: gasData.result }));
+                  return;
+                } else {
+                  console.warn(`[Google Sheets Remote Sync] Remote execution returned error:`, gasData.error);
+                  res.writeHead(400, { 'Content-Type': 'application/json' });
+                  res.end(JSON.stringify({ error: gasData.error }));
+                  return;
+                }
+              }
+            } catch (jsonErr) {
+              // Remote response was not JSON (e.g. HTML error because deployment needs new version)
+            }
+          } catch (netErr) {
+            console.warn(`[Sync Warning] Could not reach Apps Script endpoint: ${netErr.message}`);
+          }
+        }
+
+        // 2. Fallback to local service handler
         let handler = null;
         if (typeof global[methodName] === 'function') {
           handler = global[methodName];
@@ -343,6 +432,7 @@ const server = http.createServer((req, res) => {
             apiGetCatalog: () => CatalogService.getFullCatalog(),
             apiSearchCatalog: (q) => CatalogService.searchCatalog(q),
             apiCreateOrder: (o) => OrderBillingService.createOrder(o),
+            apiGetOrdersList: (f) => OrderBillingService.getOrdersList(f),
             apiAddPayment: (id, p) => OrderBillingService.addPayment(id, p),
             apiGetPhlebotomyWorklist: (s) => SampleService.getPhlebotomyWorklist(s),
             apiMarkSampleCollected: (id) => SampleService.markCollected(id),

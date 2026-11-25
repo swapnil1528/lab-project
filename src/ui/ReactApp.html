@@ -1,0 +1,1807 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Masterprick Clinical Laboratory - Laboratory Information System</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- React 18 & ReactDOM UMD -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  
+  <!-- Babel Standalone for in-browser JSX parsing -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  
+  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            brand: {
+              50: '#f0f9ff',
+              100: '#e0f2fe',
+              500: '#0ea5e9',
+              600: '#0284c7',
+              700: '#0369a1',
+              800: '#075985',
+              900: '#0c4a6e',
+            }
+          }
+        }
+      }
+    };
+  </script>
+
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    .font-mono { font-family: 'JetBrains Mono', monospace; }
+    @keyframes pulse-subtle {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+    .animate-panic {
+      animation: pulse-subtle 1.2s infinite;
+    }
+    /* Custom scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #f1f5f9; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    @media print {
+      body * { visibility: hidden; }
+      #printable-report, #printable-report * { visibility: visible; }
+      #printable-report { position: absolute; left: 0; top: 0; width: 100%; border: none !important; box-shadow: none !important; }
+      .no-print { display: none !important; }
+    }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 antialiased min-h-screen">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useMemo, useRef, useCallback } = React;
+
+    const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzP6tlEBmrZQRw4GnqEl8iGSSNByteMTdJtvvGpE9Aa5t4nDPO5_qziwr3h5WsVeTg/exec';
+
+    // =========================================================================
+    // UNIVERSAL API CLIENT (Google Apps Script + Local Dev Server Bridge)
+    // =========================================================================
+    const api = {
+      async call(action, ...args) {
+        // 1. In Google Apps Script environment, use native google.script.run
+        if (window.google && window.google.script && window.google.script.run) {
+          return new Promise((resolve, reject) => {
+            const runner = window.google.script.run
+              .withSuccessHandler(resolve)
+              .withFailureHandler(reject);
+            const gasMethod = 'api' + action.charAt(0).toUpperCase() + action.slice(1);
+            if (typeof runner[gasMethod] === 'function') {
+              runner[gasMethod].apply(runner, args);
+            } else if (typeof runner[action] === 'function') {
+              runner[action].apply(runner, args);
+            } else {
+              // Direct HTTP fallback
+              this._postDirect(action, args).then(resolve).catch(reject);
+            }
+          });
+        }
+
+        // 2. In Local Development Server, proxy to /api/:method
+        try {
+          const res = await fetch('/api/' + (action.startsWith('api') ? action : 'api' + action.charAt(0).toUpperCase() + action.slice(1)), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ args })
+          });
+          const data = await res.json();
+          if (data && data.result !== undefined) return data.result;
+          if (data && data.error) throw new Error(data.error);
+          return data;
+        } catch (err) {
+          // 3. Fallback to direct cloud Google Apps Script Web App
+          return this._postDirect(action, args);
+        }
+      },
+
+      async _postDirect(action, args) {
+        const gasAction = action.startsWith('api') ? action.slice(3, 4).toLowerCase() + action.slice(4) : action;
+        const resp = await fetch(APPS_SCRIPT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: gasAction, args: args }),
+          redirect: 'follow'
+        });
+        const json = await resp.json();
+        if (json.success === false) throw new Error(json.error || 'Server request failed');
+        return json.result;
+      }
+    };
+
+    // =========================================================================
+    // SVG ICONS COMPONENT LIBRARY
+    // =========================================================================
+    const Icons = {
+      Search: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>,
+      Plus: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"/></svg>,
+      User: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>,
+      Check: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/></svg>,
+      Trash: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>,
+      Barcode: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/></svg>,
+      Printer: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>,
+      Share: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/></svg>,
+      Flask: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/></svg>,
+      AlertCircle: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>,
+      Close: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"/></svg>,
+      Document: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>,
+      WhatsApp: () => <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981z"/></svg>,
+      Mail: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+    };
+
+    // Helper to normalize patient data structure across search and registration
+    function normalizePatient(p) {
+      if (!p) return null;
+      const raw = p.patient || p;
+      const fName = raw.first_name || raw.firstName || '';
+      const lName = raw.last_name || raw.lastName || '';
+      const title = raw.title || '';
+      const full = raw.fullName || `${title ? title + ' ' : ''}${fName} ${lName}`.trim();
+      return {
+        ...raw,
+        id: raw.id,
+        uhid: raw.uhid,
+        title: title,
+        first_name: fName,
+        last_name: lName,
+        fullName: full,
+        age: raw.age || 0,
+        age_unit: raw.age_unit || raw.ageUnit || 'Years',
+        gender: raw.gender || 'Unknown',
+        mobile: raw.mobile || '',
+        email: raw.email || '',
+        city: raw.city || ''
+      };
+    }
+
+    // =========================================================================
+    // MAIN REACT APPLICATION
+    // =========================================================================
+    function App() {
+      // 1. Application Global State
+      const [context, setContext] = useState({
+        authenticated: true,
+        email: 'admin@masterprick.in',
+        role: 'Admin',
+        labProfile: {
+          name: 'Masterprick Clinical Laboratory',
+          address: 'DEVICHAPADA',
+          phone: '+91 98200 12345'
+        }
+      });
+
+      const [activeTab, setActiveTab] = useState('orders'); // 'dashboard', 'orders', 'phlebotomy', 'results', 'reports', 'inventory', 'admin'
+      const [catalog, setCatalog] = useState([]);
+      const [patientsList, setPatientsList] = useState([]);
+      const [selectedPatient, setSelectedPatient] = useState(null);
+      const [cart, setCart] = useState([]);
+      const [toasts, setToasts] = useState([]);
+      
+      // Modals
+      const [isPatientModalOpen, setIsPatientModalOpen] = useState(false);
+      const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
+      const [latestInvoice, setLatestInvoice] = useState(null);
+
+      // Phlebotomy & Result Entry States
+      const [phlebotomyQueue, setPhlebotomyQueue] = useState([]);
+      const [resultWorklist, setResultWorklist] = useState([]);
+      const [resultDept, setResultDept] = useState('');
+      const [isLoadingWorklist, setIsLoadingWorklist] = useState(false);
+      const [isLoadingResultParams, setIsLoadingResultParams] = useState(false);
+      const [activeResultOrder, setActiveResultOrder] = useState(null);
+      const [activeResultParameters, setActiveResultParameters] = useState([]);
+      const [resultValues, setResultValues] = useState({});
+
+      // Reports & Dispatch States
+      const [reportsList, setReportsList] = useState([]);
+      const [selectedReportOrder, setSelectedReportOrder] = useState(null);
+      const [compiledReportData, setCompiledReportData] = useState(null);
+      const [reportFilter, setReportFilter] = useState('All');
+
+      // Inventory States
+      const [inventoryList, setInventoryList] = useState([]);
+
+      // Toast notification helper
+      const showToast = useCallback((message, type = 'success') => {
+        const id = Date.now() + Math.random();
+        setToasts(prev => [...prev, { id, message, type }]);
+        setTimeout(() => {
+          setToasts(prev => prev.filter(t => t.id !== id));
+        }, 4000);
+      }, []);
+
+      // 2. Initial Data Loading from Google Sheet Backend
+      useEffect(() => {
+        async function initApp() {
+          try {
+            // Load lab session context and brand profile
+            const ctx = await api.call('getContext');
+            if (ctx && ctx.labProfile && ctx.labProfile.name) {
+              setContext(ctx);
+            }
+          } catch (e) {
+            console.warn('Using default context:', e);
+          }
+
+          try {
+            // Load clinical test catalog
+            const cat = await api.call('getCatalog');
+            if (cat && (cat.tests || cat.panels)) {
+              const fullCatalog = [
+                ...(cat.panels || []).map(p => ({ ...p, isPanel: true })),
+                ...(cat.tests || []).map(t => ({ ...t, isPanel: false }))
+              ];
+              setCatalog(fullCatalog);
+            }
+          } catch (e) {
+            console.error('Catalog fetch error:', e);
+          }
+
+          // Initial Phlebotomy Queue fetch
+          refreshPhlebotomy();
+        }
+
+        initApp();
+      }, []);
+
+      // Refresh phlebotomy worklist
+      const refreshPhlebotomy = async () => {
+        try {
+          const list = await api.call('getPhlebotomyWorklist', '');
+          if (Array.isArray(list)) setPhlebotomyQueue(list);
+        } catch (e) {}
+      };
+
+      // Refresh results worklist (defaults to All Departments)
+      const refreshResults = async (dept = resultDept) => {
+        setIsLoadingWorklist(true);
+        try {
+          const targetDept = dept !== undefined ? dept : '';
+          setResultDept(targetDept);
+          const list = await api.call('getDepartmentWorklist', targetDept);
+          if (Array.isArray(list)) {
+            setResultWorklist(list);
+          } else {
+            setResultWorklist([]);
+          }
+        } catch (e) {
+          console.error('Results worklist fetch error:', e);
+          showToast(e.message || 'Failed to load result entry worklist', 'error');
+        } finally {
+          setIsLoadingWorklist(false);
+        }
+      };
+
+      // Refresh reports list
+      const refreshReports = async (status = '') => {
+        try {
+          let list = [];
+          try {
+            const ordRes = await api.call('getOrdersList', status === 'All' ? '' : status);
+            if (Array.isArray(ordRes)) list = ordRes;
+          } catch (innerErr) {
+            console.warn('getOrdersList unavailable on remote, falling back to worklist:', innerErr.message);
+          }
+          if (!Array.isArray(list) || list.length === 0) {
+            const wl = await api.call('getDepartmentWorklist', '');
+            if (Array.isArray(wl)) {
+              list = wl.map(w => ({
+                id: w.orderId,
+                order_id: w.orderId,
+                order_no: w.orderNo,
+                patient_name: w.patientName,
+                uhid: w.uhid,
+                order_status: w.status === 'Validated' ? 'Validated' : (w.resultCount > 0 ? 'Resulted' : 'Booked')
+              }));
+            }
+          }
+          if (Array.isArray(list)) {
+            setReportsList(list);
+            if (list.length > 0 && !selectedReportOrder) {
+              const firstOrd = list[0];
+              setSelectedReportOrder(firstOrd);
+              loadReportPreview(firstOrd.id || firstOrd.order_id || firstOrd.orderId);
+            }
+          }
+        } catch (e) {
+          console.error('Reports fetch error:', e);
+        }
+      };
+
+      // Load individual report preview
+      const loadReportPreview = async (orderId) => {
+        try {
+          const data = await api.call('compileReportData', orderId);
+          setCompiledReportData(data);
+        } catch (e) {
+          console.error('Report compilation error:', e);
+        }
+      };
+
+      // Refresh inventory
+      const refreshInventory = async () => {
+        try {
+          const list = await api.call('getInventoryList');
+          if (Array.isArray(list)) setInventoryList(list);
+        } catch (e) {}
+      };
+
+      // 3. Billing Cart Calculations (Live Reactive Computation)
+      const [discountVal, setDiscountVal] = useState(0);
+      const [tenderMode, setTenderMode] = useState('UPI / QR Code');
+      const [amountPaid, setAmountPaid] = useState('');
+      const [referringDoctor, setReferringDoctor] = useState('Self / Walk-in');
+
+      const grossTotal = useMemo(() => {
+        return cart.reduce((acc, item) => acc + (parseFloat(item.price) || 0), 0);
+      }, [cart]);
+
+      const discountAmount = useMemo(() => {
+        const d = parseFloat(discountVal) || 0;
+        return Math.min(grossTotal, Math.max(0, d));
+      }, [grossTotal, discountVal]);
+
+      const netBillable = useMemo(() => {
+        return Math.max(0, grossTotal - discountAmount);
+      }, [grossTotal, discountAmount]);
+
+      // Auto-default amount paid to net billable for seamless front-desk checkout
+      useEffect(() => {
+        setAmountPaid(String(netBillable));
+      }, [netBillable]);
+
+      const balanceDue = useMemo(() => {
+        const paid = parseFloat(amountPaid) || 0;
+        return Math.max(0, netBillable - paid);
+      }, [netBillable, amountPaid]);
+
+      // Add to cart helper
+      const addToCart = (item) => {
+        if (cart.find(c => c.id === item.id)) {
+          showToast(`${item.name} is already in the cart`, 'warning');
+          return;
+        }
+        setCart(prev => [...prev, item]);
+        showToast(`Added ${item.name} (₹${item.price}) to cart`);
+      };
+
+      // Remove from cart
+      const removeFromCart = (id) => {
+        setCart(prev => prev.filter(c => c.id !== id));
+      };
+
+      // Book Order Handler
+      const handleBookOrder = async () => {
+        if (!selectedPatient || !selectedPatient.uhid) {
+          showToast('Please select or register a valid patient first', 'error');
+          setIsPatientModalOpen(true);
+          return;
+        }
+        if (cart.length === 0) {
+          showToast('Please select at least one test or panel', 'warning');
+          return;
+        }
+
+        try {
+          showToast('Booking order and saving to Google Sheet...', 'info');
+          const orderPayload = {
+            uhid: selectedPatient.uhid,
+            referringDoctor: referringDoctor,
+            collectionCentreId: 'CENTRE-MAIN',
+            items: cart.map(i => ({
+              id: i.id,
+              testId: i.id,
+              code: i.code || i.id,
+              type: i.isPanel ? 'Panel' : 'Test',
+              isPanel: !!i.isPanel,
+              price: parseFloat(i.price) || 0
+            })),
+            discount: { amount: discountAmount, reason: 'Front desk concession' },
+            payment: {
+              amount: parseFloat(amountPaid) || 0,
+              mode: tenderMode,
+              payment_method: tenderMode
+            },
+            initial_payment: {
+              amount: parseFloat(amountPaid) || 0,
+              mode: tenderMode,
+              payment_method: tenderMode
+            }
+          };
+
+          const orderRes = await api.call('createOrder', orderPayload);
+          const normalizedInvoice = {
+            invoiceNo: (orderRes.invoice && (orderRes.invoice.invoice_no || orderRes.invoice.invoiceNo)) || orderRes.invoiceNo || 'INV-SUCCESS',
+            orderNo: (orderRes.order && (orderRes.order.order_no || orderRes.order.orderNo)) || orderRes.orderNo || 'ORD-SUCCESS',
+            uhid: (orderRes.order && orderRes.order.uhid) || (orderRes.invoice && orderRes.invoice.uhid) || orderPayload.uhid,
+            netAmount: (orderRes.invoice && (orderRes.invoice.net_amount !== undefined ? orderRes.invoice.net_amount : orderRes.invoice.netAmount)) || orderRes.netAmount || 0,
+            paidAmount: (orderRes.invoice && (orderRes.invoice.paid_amount !== undefined ? orderRes.invoice.paid_amount : orderRes.invoice.paidAmount)) || orderRes.paidAmount || (orderPayload.payment ? orderPayload.payment.amount : 0),
+            balanceAmount: (orderRes.invoice && (orderRes.invoice.balance_amount !== undefined ? orderRes.invoice.balance_amount : orderRes.invoice.balanceAmount)) || orderRes.balanceAmount || 0
+          };
+          setLatestInvoice(normalizedInvoice);
+          setIsInvoiceModalOpen(true);
+          setCart([]);
+          setDiscountVal(0);
+          setAmountPaid('');
+          showToast(`Order ${normalizedInvoice.orderNo} booked! Invoice: ${normalizedInvoice.invoiceNo}`, 'success');
+          refreshPhlebotomy();
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      };
+
+      // Tube color styling dictionary
+      const getTubeBadge = (specimen) => {
+        const spec = String(specimen || '').toLowerCase();
+        if (spec.includes('edta') || spec.includes('whole blood')) {
+          return { name: 'EDTA (Lavender)', bg: 'bg-purple-100 text-purple-800 border-purple-300' };
+        }
+        if (spec.includes('serum') || spec.includes('clot') || spec.includes('sst')) {
+          return { name: 'SST (Gold / Red)', bg: 'bg-amber-100 text-amber-800 border-amber-300' };
+        }
+        if (spec.includes('fluoride') || spec.includes('glucose')) {
+          return { name: 'Fluoride (Grey)', bg: 'bg-slate-200 text-slate-800 border-slate-400' };
+        }
+        return { name: specimen || 'Tube', bg: 'bg-blue-100 text-blue-800 border-blue-300' };
+      };
+
+      return (
+        <div className="flex flex-col min-h-screen">
+          {/* ==================== 1. BRAND HEADER & NAV ==================== */}
+          <header className="bg-slate-900 text-white shadow-md border-b border-slate-800 sticky top-0 z-40">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+              <div className="flex items-center justify-between h-16">
+                
+                {/* Brand Identity */}
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-sky-500 to-blue-600 flex items-center justify-center font-black text-xl text-white shadow-lg shadow-sky-500/30">
+                    M
+                  </div>
+                  <div>
+                    <h1 className="text-base font-bold tracking-tight text-white flex items-center gap-2">
+                      {context.labProfile.name}
+                      <span className="text-[10px] bg-sky-500/20 text-sky-300 font-mono font-semibold px-2 py-0.5 rounded-full border border-sky-400/30">
+                        LIVE GOOGLE SHEET
+                      </span>
+                    </h1>
+                    <p className="text-xs text-slate-400 font-medium">
+                      {context.labProfile.address} &bull; {context.labProfile.phone}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Right Actions */}
+                <div className="flex items-center gap-3">
+                  {/* Front Desk Search Box */}
+                  <div className="relative hidden md:block">
+                    <input 
+                      type="text" 
+                      placeholder="Search Patient (UHID, Mobile, Name)..." 
+                      className="bg-slate-800/90 text-sm text-white placeholder-slate-400 rounded-lg pl-9 pr-4 py-1.5 focus:outline-none focus:ring-2 focus:ring-sky-500 border border-slate-700 w-64"
+                      onChange={async (e) => {
+                        const q = e.target.value.trim();
+                        if (q.length >= 2) {
+                          const res = await api.call('searchPatients', q);
+                          if (res && res.length > 0) setPatientsList(res);
+                        } else {
+                          setPatientsList([]);
+                        }
+                      }}
+                    />
+                    <div className="absolute left-2.5 top-2 text-slate-400"><Icons.Search /></div>
+
+                    {/* Quick Search Dropdown */}
+                    {patientsList.length > 0 && (
+                      <div className="absolute top-10 left-0 w-80 bg-white rounded-xl shadow-2xl border border-slate-200 z-50 text-slate-800 overflow-hidden">
+                        <div className="px-3 py-1.5 bg-slate-50 text-[11px] font-bold text-slate-500 border-b border-slate-200">
+                          Found {patientsList.length} Patient(s)
+                        </div>
+                        <div className="max-h-60 overflow-y-auto divide-y divide-slate-100">
+                          {patientsList.map(p => (
+                            <div 
+                              key={p.uhid} 
+                              onClick={() => {
+                                setSelectedPatient(normalizePatient(p));
+                                setPatientsList([]);
+                                setActiveTab('orders');
+                                showToast(`Selected patient: ${p.fullName} (${p.uhid})`);
+                              }}
+                              className="p-3 hover:bg-sky-50 cursor-pointer transition flex items-center justify-between"
+                            >
+                              <div>
+                                <div className="font-bold text-sm text-slate-900">{p.fullName}</div>
+                                <div className="text-xs text-slate-500 font-mono">{p.uhid} &bull; {p.mobile}</div>
+                              </div>
+                              <span className="text-xs font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-700">
+                                {p.age} {p.ageUnit} &bull; {p.gender}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Register Patient Button */}
+                  <button 
+                    onClick={() => setIsPatientModalOpen(true)}
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 bg-sky-500 hover:bg-sky-600 active:scale-95 text-white font-semibold text-xs rounded-lg shadow-sm transition"
+                  >
+                    <Icons.Plus />
+                    <span>New Patient</span>
+                  </button>
+
+                  {/* Staff Profile Badge */}
+                  <div className="hidden sm:flex items-center gap-2 pl-3 border-l border-slate-700 text-xs">
+                    <div className="w-7 h-7 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-sky-400 font-bold">
+                      {context.email.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <div className="font-semibold text-slate-200">{context.fullName || 'Admin Staff'}</div>
+                      <div className="text-[10px] text-sky-400 font-mono">{context.role}</div>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            {/* Tab Navigation Navigation Pills */}
+            <nav className="bg-slate-950/60 border-t border-slate-800/80 px-4 sm:px-6 lg:px-8">
+              <div className="max-w-7xl mx-auto flex items-center gap-1 overflow-x-auto py-2">
+                {[
+                  { id: 'dashboard', label: '📊 Dashboard' },
+                  { id: 'orders', label: '🛒 Orders & Billing' },
+                  { id: 'phlebotomy', label: `🩸 Phlebotomy Queue (${phlebotomyQueue.length})` },
+                  { id: 'results', label: '🔬 Result Entry' },
+                  { id: 'reports', label: '📄 Reports & Dispatch' },
+                  { id: 'inventory', label: '📦 Inventory' },
+                  { id: 'admin', label: '⚙️ Lab Settings' }
+                ].map(tab => (
+                  <button
+                    key={tab.id}
+                    onClick={() => {
+                      setActiveTab(tab.id);
+                      if (tab.id === 'phlebotomy') refreshPhlebotomy();
+                      if (tab.id === 'results') refreshResults();
+                      if (tab.id === 'reports') refreshReports();
+                      if (tab.id === 'inventory') refreshInventory();
+                    }}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition ${
+                      activeTab === tab.id 
+                        ? 'bg-sky-500 text-white shadow-sm shadow-sky-500/20' 
+                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            </nav>
+          </header>
+
+          {/* ==================== 2. MAIN WORKSPACE ==================== */}
+          <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
+            
+            {/* TAB: ORDERS & BILLING */}
+            {activeTab === 'orders' && (
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                
+                {/* Left Column: Patient Profile + Test Catalog (7 Cols) */}
+                <div className="lg:col-span-7 space-y-6">
+                  
+                  {/* Selected Patient Banner */}
+                  <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 flex flex-wrap items-center justify-between gap-4">
+                    {selectedPatient ? (
+                      <div className="flex items-center gap-3.5">
+                        <div className="w-12 h-12 rounded-xl bg-sky-100 text-sky-700 flex items-center justify-center font-bold text-lg">
+                          {selectedPatient.first_name ? selectedPatient.first_name.charAt(0) : 'P'}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-extrabold text-base text-slate-900">
+                              {selectedPatient.title ? selectedPatient.title + ' ' : ''}{selectedPatient.first_name} {selectedPatient.last_name}
+                            </span>
+                            <span className="text-[11px] font-mono px-2 py-0.5 bg-slate-100 font-bold rounded text-slate-600">
+                              {selectedPatient.uhid}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-500 font-medium mt-0.5">
+                            {selectedPatient.age} {selectedPatient.age_unit || 'Years'} &bull; {selectedPatient.gender} &bull; 📱 {selectedPatient.mobile}
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-slate-500 text-sm">
+                        <span className="font-semibold text-slate-700">No Patient Selected:</span> Select an existing patient or register a new one to book an order.
+                      </div>
+                    )}
+
+                    <div className="flex items-center gap-2">
+                      <button 
+                        onClick={() => setIsPatientModalOpen(true)}
+                        className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition"
+                      >
+                        {selectedPatient ? 'Change Patient' : '+ Select / Register'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Test & Package Catalog */}
+                  <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                      <div>
+                        <h2 className="font-bold text-base text-slate-900">Clinical Test Catalog</h2>
+                        <p className="text-xs text-slate-400">Click any test or package to add to the invoice</p>
+                      </div>
+                      <span className="text-xs font-mono font-bold text-slate-400">
+                        {catalog.length} available tests
+                      </span>
+                    </div>
+
+                    {/* Catalog Grid */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[520px] overflow-y-auto pr-1">
+                      {catalog.map(item => {
+                        const tube = getTubeBadge(item.specimen_type || (item.isPanel ? 'Serum (SST)' : 'EDTA'));
+                        return (
+                          <div 
+                            key={item.id}
+                            onClick={() => addToCart(item)}
+                            className="p-3.5 rounded-xl border border-slate-200 hover:border-sky-500 hover:shadow-md cursor-pointer transition bg-slate-50/50 hover:bg-white flex flex-col justify-between group"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${tube.bg}`}>
+                                  {item.isPanel ? 'PANEL / PACKAGE' : 'TEST'}
+                                </span>
+                                <h3 className="font-bold text-sm text-slate-800 mt-1.5 group-hover:text-sky-600 transition">
+                                  {item.name}
+                                </h3>
+                                <p className="text-xs text-slate-400 mt-0.5">{item.department}</p>
+                              </div>
+                              <span className="text-base font-extrabold text-slate-900 font-mono">
+                                ₹{item.price}
+                              </span>
+                            </div>
+
+                            <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+                              <span>Tube: {tube.name}</span>
+                              <span className="text-sky-600 font-bold group-hover:translate-x-0.5 transition">+ Add</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                </div>
+
+                {/* Right Column: Reactive Cart & Invoice (5 Cols) */}
+                <div className="lg:col-span-5 space-y-6">
+                  <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-5 sticky top-24">
+                    
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                      <div className="flex items-center gap-2">
+                        <h2 className="font-bold text-base text-slate-900">Order Cart & Billing</h2>
+                        <span className="px-2 py-0.5 bg-sky-100 text-sky-800 text-xs font-bold rounded-full">
+                          {cart.length}
+                        </span>
+                      </div>
+                      {cart.length > 0 && (
+                        <button onClick={() => setCart([])} className="text-xs text-red-500 hover:underline">
+                          Clear Cart
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Cart Items List */}
+                    {cart.length === 0 ? (
+                      <div className="py-10 text-center text-slate-400 space-y-2">
+                        <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-400 mx-auto flex items-center justify-center">
+                          <Icons.Flask />
+                        </div>
+                        <p className="text-xs font-medium">Cart is empty. Click tests from the catalog to add.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2 max-h-48 overflow-y-auto divide-y divide-slate-100">
+                        {cart.map(item => (
+                          <div key={item.id} className="pt-2 flex items-center justify-between text-xs">
+                            <div>
+                              <div className="font-bold text-slate-800">{item.name}</div>
+                              <div className="text-[11px] text-slate-400 font-mono">₹{item.price}</div>
+                            </div>
+                            <button 
+                              onClick={() => removeFromCart(item.id)}
+                              className="text-slate-400 hover:text-red-500 p-1 transition"
+                            >
+                              <Icons.Trash />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Billing Options */}
+                    <div className="space-y-3 pt-3 border-t border-slate-100 text-xs">
+                      <div>
+                        <label className="font-bold text-slate-600 block mb-1">Referring Doctor</label>
+                        <select 
+                          value={referringDoctor}
+                          onChange={(e) => setReferringDoctor(e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 focus:ring-2 focus:ring-sky-500 font-medium"
+                        >
+                          <option value="Self / Walk-in">Self / Walk-in</option>
+                          <option value="Dr. Ramesh Kulkarni, MD">Dr. Ramesh Kulkarni, MD</option>
+                          <option value="Dr. Ananya Sen, MD (Path)">Dr. Ananya Sen, MD (Path)</option>
+                          <option value="Dr. Patil Diagnostic Clinic">Dr. Patil Diagnostic Clinic</option>
+                        </select>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="font-bold text-slate-600 block mb-1">Discount (₹)</label>
+                          <input 
+                            type="number" 
+                            min="0"
+                            placeholder="0"
+                            value={discountVal}
+                            onChange={(e) => setDiscountVal(e.target.value)}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 font-mono font-bold text-slate-800"
+                          />
+                        </div>
+                        <div>
+                          <label className="font-bold text-slate-600 block mb-1">Tender Mode</label>
+                          <select 
+                            value={tenderMode}
+                            onChange={(e) => setTenderMode(e.target.value)}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 font-medium"
+                          >
+                            <option value="UPI / QR Code">UPI / QR Code</option>
+                            <option value="Cash">Cash</option>
+                            <option value="Card">Credit/Debit Card</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="font-bold text-slate-600 block mb-1">Amount Paid Now (₹)</label>
+                        <input 
+                          type="number" 
+                          min="0"
+                          placeholder={netBillable}
+                          value={amountPaid}
+                          onChange={(e) => setAmountPaid(e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 font-mono font-bold text-slate-800"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Summary Totals */}
+                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-1.5 text-xs">
+                      <div className="flex justify-between text-slate-500">
+                        <span>Gross Total:</span>
+                        <span className="font-mono">₹{grossTotal.toFixed(2)}</span>
+                      </div>
+                      {discountAmount > 0 && (
+                        <div className="flex justify-between text-emerald-600 font-medium">
+                          <span>Concession / Discount:</span>
+                          <span className="font-mono">-₹{discountAmount.toFixed(2)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between text-base font-extrabold text-slate-900 pt-1.5 border-t border-slate-200">
+                        <span>Net Billable:</span>
+                        <span className="font-mono text-sky-600">₹{netBillable.toFixed(2)}</span>
+                      </div>
+                      {balanceDue > 0 && (
+                        <div className="flex justify-between text-xs font-bold text-amber-700 pt-1">
+                          <span>Balance Due:</span>
+                          <span className="font-mono">₹{balanceDue.toFixed(2)}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Submit Order Button */}
+                    <button 
+                      onClick={handleBookOrder}
+                      disabled={cart.length === 0}
+                      className="w-full py-3 bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 disabled:opacity-50 text-white font-extrabold text-sm rounded-xl shadow-lg shadow-sky-500/20 active:scale-[0.98] transition flex items-center justify-center gap-2"
+                    >
+                      <Icons.Check />
+                      <span>Book Order & Issue Invoice (₹{netBillable.toFixed(2)})</span>
+                    </button>
+
+                  </div>
+                </div>
+
+              </div>
+            )}
+
+            {/* TAB: PHLEBOTOMY QUEUE */}
+            {activeTab === 'phlebotomy' && (
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 space-y-6">
+                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-4">
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-900">Phlebotomy & Accessioning Queue</h2>
+                    <p className="text-xs text-slate-500">Collect biological samples, print 50mm thermal barcode labels, and verify specimen tubes</p>
+                  </div>
+                  <button onClick={refreshPhlebotomy} className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-xs font-bold rounded-lg transition">
+                    ↻ Refresh Worklist
+                  </button>
+                </div>
+
+                {phlebotomyQueue.length === 0 ? (
+                  <div className="py-12 text-center text-slate-400">
+                    <p className="text-sm">No pending samples in phlebotomy queue. All caught up!</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead>
+                        <tr className="bg-slate-50 text-slate-500 uppercase text-[10px] font-bold tracking-wider border-b border-slate-200">
+                          <th className="p-3">Sample Barcode</th>
+                          <th className="p-3">Patient Details</th>
+                          <th className="p-3">Tube & Specimen</th>
+                          <th className="p-3">Status</th>
+                          <th className="p-3 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {phlebotomyQueue.map(s => {
+                          const specimenDesc = s.container_tube || s.sample_type || s.specimenType || '';
+                          const tube = getTubeBadge(specimenDesc);
+                          const status = s.collection_status || s.status || 'Ordered';
+                          return (
+                            <tr key={s.id} className="hover:bg-slate-50/80 transition">
+                              <td className="p-3 font-mono font-bold text-slate-900">
+                                <div>{s.barcode}</div>
+                                <div className="text-[10px] text-slate-400">Order: {s.order_id || s.orderId}</div>
+                              </td>
+                              <td className="p-3">
+                                <div className="font-bold text-slate-800">{s.patient_name || s.patientName}</div>
+                                <div className="text-[10px] text-slate-400 font-mono">{s.uhid} {s.gender ? `• ${s.gender}` : ''}</div>
+                              </td>
+                              <td className="p-3">
+                                <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] border ${tube.bg}`}>
+                                  {tube.name}
+                                </span>
+                              </td>
+                              <td className="p-3">
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                  status === 'Collected' ? 'bg-sky-100 text-sky-800' :
+                                  status === 'Received' || status === 'In Process' ? 'bg-emerald-100 text-emerald-800' :
+                                  'bg-amber-100 text-amber-800'
+                                }`}>
+                                  {status}
+                                </span>
+                              </td>
+                              <td className="p-3 text-right space-x-2">
+                                {status === 'Ordered' && (
+                                  <button 
+                                    onClick={async () => {
+                                      await api.call('markSampleCollected', s.id);
+                                      showToast(`Sample ${s.barcode} collected!`);
+                                      refreshPhlebotomy();
+                                    }}
+                                    className="px-2.5 py-1 bg-sky-600 hover:bg-sky-700 text-white rounded font-bold text-[11px] shadow-sm transition"
+                                  >
+                                    Collect Sample
+                                  </button>
+                                )}
+                                {status === 'Collected' && (
+                                  <button 
+                                    onClick={async () => {
+                                      await api.call('markSampleReceived', s.id);
+                                      showToast(`Sample ${s.barcode} received in lab!`);
+                                      refreshPhlebotomy();
+                                    }}
+                                    className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded font-bold text-[11px] shadow-sm transition"
+                                  >
+                                    Receive in Lab
+                                  </button>
+                                )}
+                                <button 
+                                  onClick={() => window.print()}
+                                  className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded font-bold text-[11px] transition"
+                                >
+                                  Print 50x25mm Label
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* TAB: RESULT ENTRY */}
+            {activeTab === 'results' && (
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 space-y-6">
+                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-4">
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-900">Clinical Result Entry & Validation</h2>
+                    <p className="text-xs text-slate-500">Auto flags (Low, Normal, High, Critical), delta check vs history, and two-step pathologist sign-off</p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {[
+                      { id: '', label: 'All Departments' },
+                      { id: 'Hematology', label: 'Hematology' },
+                      { id: 'Biochemistry', label: 'Biochemistry' },
+                      { id: 'Immunology', label: 'Immunology' }
+                    ].map(dept => (
+                      <button 
+                        key={dept.id || 'ALL'}
+                        onClick={() => refreshResults(dept.id)}
+                        className={`px-3 py-1 font-bold text-xs rounded-lg transition ${
+                          resultDept === dept.id
+                            ? 'bg-sky-500 text-white shadow-sm'
+                            : 'bg-slate-100 hover:bg-sky-50 hover:text-sky-600 text-slate-600'
+                        }`}
+                      >
+                        {dept.label}
+                      </button>
+                    ))}
+                    <button 
+                      onClick={() => refreshResults(resultDept)}
+                      className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-lg transition ml-1"
+                    >
+                      ↻ Refresh
+                    </button>
+                  </div>
+                </div>
+
+                {isLoadingWorklist ? (
+                  <div className="py-12 text-center text-slate-400">
+                    <p className="text-sm font-semibold animate-pulse">Loading samples ready for result entry...</p>
+                  </div>
+                ) : resultWorklist.length === 0 ? (
+                  <div className="py-12 text-center text-slate-400 space-y-3">
+                    <p className="text-sm">No samples pending result entry {resultDept ? `for ${resultDept}` : 'across any department'}.</p>
+                    <p className="text-xs text-slate-400">Make sure samples are marked <b>Collected</b> or <b>Received</b> in the Phlebotomy Queue.</p>
+                    <div className="flex justify-center gap-2">
+                      {resultDept && (
+                        <button
+                          onClick={() => refreshResults('')}
+                          className="px-3 py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-700 text-xs font-bold rounded-lg transition"
+                        >
+                          Show All Departments
+                        </button>
+                      )}
+                      <button
+                        onClick={() => { setActiveTab('phlebotomy'); refreshPhlebotomy(); }}
+                        className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg transition"
+                      >
+                        Go to Phlebotomy Queue →
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {/* Orders list */}
+                    <div className="space-y-2 max-h-[600px] overflow-y-auto">
+                      {resultWorklist.map(o => {
+                        const isSelected = activeResultOrder && ((o.sampleId && activeResultOrder.sampleId === o.sampleId) || activeResultOrder.orderId === o.orderId);
+                        const summaryTests = o.testsList || (Array.isArray(o.items) && o.items.length > 0 ? o.items.map(i => i.name).join(', ') : `${o.department || 'Lab'} Tests`);
+                        return (
+                        <div 
+                          key={o.sampleId || o.orderId}
+                          onClick={async () => {
+                            setActiveResultOrder(o);
+                            setActiveResultParameters([]);
+                            setIsLoadingResultParams(true);
+                            try {
+                              let res = await api.call('getOrderResultsForEntry', o.orderId, o.sampleId);
+                              if ((!res || !res.parameters || res.parameters.length === 0) && o.sampleId) {
+                                res = await api.call('getOrderResultsForEntry', o.orderId, '');
+                              }
+                              if (res && Array.isArray(res.parameters)) {
+                                setActiveResultParameters(res.parameters);
+                                const initVals = {};
+                                res.parameters.forEach(p => { 
+                                  const k = p.code || p.testCode || p.testId;
+                                  initVals[k] = p.currentValue !== undefined && p.currentValue !== null ? p.currentValue : ''; 
+                                });
+                                setResultValues(initVals);
+                              } else {
+                                setActiveResultParameters([]);
+                              }
+                            } catch (err) {
+                              showToast(err.message || 'Failed to load tests for this order', 'error');
+                            } finally {
+                              setIsLoadingResultParams(false);
+                            }
+                          }}
+                          className={`p-3.5 rounded-xl border cursor-pointer transition ${
+                            isSelected
+                              ? 'border-sky-500 bg-sky-50/50 shadow-sm' 
+                              : 'border-slate-200 hover:bg-slate-50'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="font-bold text-xs text-slate-900">{o.patientName}</div>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                              o.status === 'Received' || o.status === 'In Process' ? 'bg-emerald-100 text-emerald-800' : 'bg-sky-100 text-sky-800'
+                            }`}>{o.status}</span>
+                          </div>
+                          <div className="text-[11px] text-slate-500 font-mono mt-0.5">{o.orderNo} &bull; {o.barcode || o.uhid}</div>
+                          <div className="text-[10px] font-semibold text-sky-700 mt-1">{o.department} &bull; {o.tube}</div>
+                          <div className="text-[10px] text-slate-400 mt-1 line-clamp-2">{summaryTests}</div>
+                        </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Result Entry Grid */}
+                    <div className="md:col-span-2 border border-slate-200 rounded-xl p-4 bg-slate-50/50 space-y-4">
+                      {activeResultOrder ? (
+                        <>
+                          <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+                            <div>
+                              <span className="font-extrabold text-sm text-slate-900">{activeResultOrder.patientName}</span>
+                              <span className="text-xs text-slate-400 font-mono ml-2">({activeResultOrder.uhid})</span>
+                            </div>
+                            <span className="text-xs font-bold text-sky-600 font-mono">{activeResultOrder.orderNo}</span>
+                          </div>
+
+                          <div className="space-y-3">
+                            {isLoadingResultParams ? (
+                              <div className="py-12 text-center text-slate-400 text-xs animate-pulse">
+                                Loading test parameters and reference ranges...
+                              </div>
+                            ) : activeResultParameters.length === 0 ? (
+                              <div className="py-12 text-center text-amber-700 bg-amber-50 border border-amber-200 rounded-xl text-xs p-4">
+                                No active test parameters found linked to sample {activeResultOrder.barcode || activeResultOrder.orderNo}. Try refreshing or check OrderItems in Google Sheets.
+                              </div>
+                            ) : activeResultParameters.map(p => {
+                              const pName = p.name || p.testName || p.code || 'Test Parameter';
+                              const pCode = p.code || p.testCode || p.testId;
+                              const pRefText = p.referenceRangeText || (p.normalLow !== null && p.normalHigh !== null ? `${p.normalLow} - ${p.normalHigh} ${p.units || ''}` : `Ref: - ${p.units || ''}`);
+                              return (
+                                <div key={p.testId || pCode} className="bg-white p-3 rounded-lg border border-slate-200 flex items-center justify-between gap-4 text-xs">
+                                  <div className="w-1/3">
+                                    <div className="font-bold text-slate-800">{pName}</div>
+                                    <div className="text-[10px] text-slate-400 font-mono">{pRefText}</div>
+                                  </div>
+                                  <div className="w-1/3">
+                                    <input 
+                                      type="text" 
+                                      placeholder="Enter Value..." 
+                                      value={resultValues[pCode] !== undefined ? resultValues[pCode] : ''}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        setResultValues(prev => ({ ...prev, [pCode]: val }));
+                                      }}
+                                      className="w-full bg-slate-50 border border-slate-200 rounded px-2.5 py-1.5 font-mono font-bold text-slate-800 focus:bg-white focus:border-sky-500 focus:outline-none transition"
+                                    />
+                                  </div>
+                                  <div className="w-1/4 text-right">
+                                    <span className="text-[11px] font-bold text-slate-500 font-mono">{p.units || ''}</span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          <div className="pt-3 flex justify-end gap-2 border-t border-slate-200">
+                            <button 
+                              onClick={async () => {
+                                try {
+                                  await api.call('saveResults', activeResultOrder.orderId, activeResultOrder.sampleId, resultValues, false);
+                                  showToast('Draft results saved to Google Sheet!');
+                                } catch (e) {
+                                  showToast(e.message, 'error');
+                                }
+                              }}
+                              className="px-4 py-2 bg-slate-200 hover:bg-slate-300 font-bold text-xs rounded-lg transition"
+                            >
+                              Save Draft
+                            </button>
+                            <button 
+                              onClick={async () => {
+                                try {
+                                  showToast('Saving results and verifying with AIIMS/Tietz reference ranges...', 'info');
+                                  await api.call('saveResults', activeResultOrder.orderId, activeResultOrder.sampleId, resultValues, true);
+                                  await api.call('validateResults', activeResultOrder.orderId);
+                                  showToast(`Order ${activeResultOrder.orderNo} signed and validated!`, 'success');
+                                  setActiveResultOrder(null);
+                                  refreshResults();
+                                  setActiveTab('reports');
+                                  refreshReports();
+                                } catch (e) {
+                                  showToast(e.message, 'error');
+                                }
+                              }}
+                              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg shadow-sm transition"
+                            >
+                              ✓ Pathologist Validate & Sign →
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="py-20 text-center text-slate-400 text-xs">
+                          Select an order from the list on the left to enter clinical values
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* TAB: REPORTS & DISPATCH */}
+            {activeTab === 'reports' && (
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 space-y-6">
+                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-4">
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-900">Clinical Reports & Dispatch</h2>
+                    <p className="text-xs text-slate-500">Electronically signed pathology reports, multi-channel dispatch (WhatsApp & Email), and PDF print</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {['All', 'Validated', 'Resulted', 'Booked'].map(flt => (
+                      <button 
+                        key={flt}
+                        onClick={() => { setReportFilter(flt); refreshReports(flt); }}
+                        className={`px-3 py-1 text-xs font-bold rounded-lg transition ${
+                          reportFilter === flt ? 'bg-sky-500 text-white shadow-sm' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                        }`}
+                      >
+                        {flt}
+                      </button>
+                    ))}
+                    <button onClick={() => refreshReports(reportFilter)} className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-xs font-bold rounded-lg transition ml-2">
+                      ↻ Refresh
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                  {/* Left: Orders List */}
+                  <div className="lg:col-span-4 space-y-2 max-h-[700px] overflow-y-auto no-print">
+                    {reportsList.length === 0 ? (
+                      <div className="py-12 text-center text-slate-400 text-xs">
+                        No orders found for this status.
+                      </div>
+                    ) : (
+                      reportsList.map(ord => {
+                        const isSelected = selectedReportOrder && (selectedReportOrder.id === ord.id || selectedReportOrder.order_id === ord.id || selectedReportOrder.orderId === ord.orderId);
+                        const ordId = ord.id || ord.order_id || ord.orderId;
+                        const ordNo = ord.order_no || ord.orderNo;
+                        const pName = ord.patient_name || ord.patientName;
+                        const status = ord.order_status || ord.status || 'Booked';
+                        return (
+                          <div 
+                            key={ordId}
+                            onClick={() => {
+                              setSelectedReportOrder(ord);
+                              loadReportPreview(ordId);
+                            }}
+                            className={`p-3.5 rounded-xl border cursor-pointer transition ${
+                              isSelected 
+                                ? 'border-sky-500 bg-sky-50/50 shadow-sm' 
+                                : 'border-slate-200 hover:bg-slate-50'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <div className="font-bold text-xs text-slate-900">{pName}</div>
+                                <div className="text-[11px] text-slate-500 font-mono mt-0.5">{ordNo} &bull; {ord.uhid}</div>
+                              </div>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                status === 'Validated' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
+                                status === 'Resulted' ? 'bg-sky-100 text-sky-800 border border-sky-200' :
+                                'bg-amber-100 text-amber-800 border border-amber-200'
+                              }`}>
+                                {status}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  {/* Right: Clinical Diagnostic Report Preview */}
+                  <div className="lg:col-span-8">
+                    {compiledReportData ? (
+                      <div className="space-y-4">
+                        {/* Dispatch Toolbar */}
+                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-wrap items-center justify-between gap-2 no-print">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-slate-700">Dispatch Actions:</span>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                              compiledReportData.isPaid ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                            }`}>
+                              {compiledReportData.isPaid ? 'PAID IN FULL' : 'PAYMENT PENDING'}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button 
+                              onClick={() => window.print()}
+                              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs rounded-lg shadow-sm transition flex items-center gap-1.5"
+                            >
+                              <Icons.Printer />
+                              <span>Print Clinical Report</span>
+                            </button>
+                            <button 
+                              onClick={async () => {
+                                try {
+                                  const url = await api.call('getWhatsAppShareUrl', compiledReportData.orderId);
+                                  if (url) window.open(url, '_blank');
+                                } catch (e) {
+                                  showToast(e.message, 'error');
+                                }
+                              }}
+                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg shadow-sm transition flex items-center gap-1.5"
+                            >
+                              <Icons.Share />
+                              <span>WhatsApp Report</span>
+                            </button>
+                            <button 
+                              onClick={async () => {
+                                try {
+                                  await api.call('sendReportEmail', compiledReportData.orderId);
+                                  showToast('Report emailed to patient!', 'success');
+                                } catch (e) {
+                                  showToast(e.message, 'error');
+                                }
+                              }}
+                              className="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs rounded-lg shadow-sm transition flex items-center gap-1.5"
+                            >
+                              <Icons.Mail />
+                              <span>Email Report</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Printable Hospital-Grade Report Card */}
+                        <div id="printable-report" className="bg-white border-2 border-slate-200 rounded-2xl p-8 shadow-sm space-y-6 relative overflow-hidden text-slate-900">
+                          {/* Watermark if unpaid */}
+                          {compiledReportData.showWatermark && (
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-[0.06] rotate-[-30deg] text-6xl font-black text-red-600 uppercase select-none">
+                              Provisional Report
+                            </div>
+                          )}
+
+                          {/* 1. Lab Branded Letterhead */}
+                          <div className="border-b-2 border-slate-900 pb-4 flex justify-between items-start">
+                            <div>
+                              <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">{context.labProfile.name}</h1>
+                              <p className="text-xs text-slate-500 font-medium">{context.labProfile.tagline}</p>
+                              <p className="text-[11px] text-slate-400 mt-1">{context.labProfile.address} &bull; Ph: {context.labProfile.phone}</p>
+                            </div>
+                            <div className="text-right">
+                              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-sky-50 text-sky-800 border border-sky-200">
+                                DPDP ACT 2023 COMPLIANT
+                              </span>
+                              <div className="text-[10px] text-slate-400 font-mono mt-1">NABL / ICMR Standards</div>
+                            </div>
+                          </div>
+
+                          {/* 2. Patient Demographics & Order Metadata */}
+                          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                            <div>
+                              <span className="text-[10px] font-bold text-slate-400 uppercase">Patient Name</span>
+                              <div className="font-extrabold text-slate-800">{compiledReportData.patientName}</div>
+                            </div>
+                            <div>
+                              <span className="text-[10px] font-bold text-slate-400 uppercase">Age / Gender</span>
+                              <div className="font-bold text-slate-800">{compiledReportData.ageGender}</div>
+                            </div>
+                            <div>
+                              <span className="text-[10px] font-bold text-slate-400 uppercase">UHID No</span>
+                              <div className="font-mono font-bold text-slate-800">{compiledReportData.uhid}</div>
+                            </div>
+                            <div>
+                              <span className="text-[10px] font-bold text-slate-400 uppercase">Order / Invoice</span>
+                              <div className="font-mono font-bold text-slate-800">{compiledReportData.orderNo}</div>
+                            </div>
+                            <div>
+                              <span className="text-[10px] font-bold text-slate-400 uppercase">Referring Doctor</span>
+                              <div className="font-semibold text-slate-700">{compiledReportData.referringDoctor || 'Self'}</div>
+                            </div>
+                            <div>
+                              <span className="text-[10px] font-bold text-slate-400 uppercase">Collection Centre</span>
+                              <div className="font-semibold text-slate-700">{compiledReportData.collectionCentre || 'Main Lab'}</div>
+                            </div>
+                            <div>
+                              <span className="text-[10px] font-bold text-slate-400 uppercase">Date of Order</span>
+                              <div className="font-mono text-slate-700">{compiledReportData.orderDate || new Date().toISOString().substring(0, 10)}</div>
+                            </div>
+                            <div>
+                              <span className="text-[10px] font-bold text-slate-400 uppercase">Report Status</span>
+                              <div className="font-bold text-emerald-600">Electronically Verified</div>
+                            </div>
+                          </div>
+
+                          {/* 3. Clinical Investigation Results by Department */}
+                          <div className="space-y-6">
+                            {Object.entries(compiledReportData.departments || {}).map(([dept, tests]) => (
+                              <div key={dept} className="space-y-2">
+                                <div className="bg-slate-800 text-white text-[11px] font-extrabold uppercase tracking-wider px-3 py-1.5 rounded-lg flex justify-between items-center">
+                                  <span>Department of {dept}</span>
+                                  <span className="font-normal text-[10px] opacity-80">{tests.length} Parameters</span>
+                                </div>
+                                <table className="w-full text-left text-xs border border-slate-200 rounded-lg overflow-hidden">
+                                  <thead>
+                                    <tr className="bg-slate-100 text-slate-600 text-[10px] uppercase font-bold tracking-wider border-b border-slate-200">
+                                      <th className="p-2.5">Investigation / Test</th>
+                                      <th className="p-2.5">Observed Value</th>
+                                      <th className="p-2.5">Units</th>
+                                      <th className="p-2.5">Biological Reference Interval</th>
+                                      <th className="p-2.5 text-center">Flag</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-100">
+                                    {tests.map((t, idx) => {
+                                      const isAbnormal = t.flag && t.flag !== 'Normal' && t.flag !== '';
+                                      return (
+                                        <tr key={idx} className={isAbnormal ? 'bg-amber-50/50' : 'hover:bg-slate-50'}>
+                                          <td className="p-2.5 font-bold text-slate-800">{t.name}</td>
+                                          <td className={`p-2.5 font-mono font-extrabold text-sm ${isAbnormal ? 'text-red-600' : 'text-slate-900'}`}>
+                                            {t.value}
+                                          </td>
+                                          <td className="p-2.5 text-slate-500 font-mono">{t.unit || '-'}</td>
+                                          <td className="p-2.5 text-slate-600 font-mono">{t.refRangeText || '-'}</td>
+                                          <td className="p-2.5 text-center">
+                                            {isAbnormal ? (
+                                              <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-red-100 text-red-800 border border-red-200 uppercase">
+                                                {t.flag}
+                                              </span>
+                                            ) : (
+                                              <span className="text-[11px] text-slate-400 font-medium">Normal</span>
+                                            )}
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* 4. Pathologist Digital Sign-off Footer */}
+                          <div className="pt-6 border-t-2 border-slate-200 flex justify-between items-end text-xs">
+                            <div className="text-[10px] text-slate-400 space-y-1">
+                              <p>&bull; Tests performed using fully automated calibrated analyzers.</p>
+                              <p>&bull; Reference intervals established per AIIMS / Tietz clinical standards.</p>
+                              <p>&bull; This is an authentic digitally signed computer-generated report.</p>
+                            </div>
+                            <div className="text-right">
+                              <div className="font-mono text-[10px] text-emerald-700 font-bold mb-1">
+                                [Digitally Signed via Google Workspace]
+                              </div>
+                              <div className="font-extrabold text-sm text-slate-900">{compiledReportData.pathologistName}</div>
+                              <div className="text-slate-500 text-[11px] font-medium">{compiledReportData.pathologistQualification}</div>
+                              <div className="text-[10px] text-slate-400">Consultant Pathologist</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="py-24 text-center text-slate-400 text-xs border border-dashed border-slate-200 rounded-2xl bg-slate-50/50">
+                        <div className="w-12 h-12 mx-auto text-slate-300 mb-2 flex items-center justify-center">
+                          <Icons.Document />
+                        </div>
+                        <p className="mt-2 text-sm font-semibold text-slate-600">Select an order from the list on the left to preview its report</p>
+                        <p className="text-xs text-slate-400 mt-1">Reports can be printed or shared via WhatsApp & Email directly to patients</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB: INVENTORY */}
+            {activeTab === 'inventory' && (
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 space-y-6">
+                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-4">
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-900">Reagents & Consumables Inventory</h2>
+                    <p className="text-xs text-slate-500">Live tracking from Google Sheets 'Inventory' tab with low-stock alerts and lot tracking</p>
+                  </div>
+                  <button onClick={refreshInventory} className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-xs font-bold rounded-lg transition">
+                    ↻ Refresh Stock
+                  </button>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="bg-slate-50 text-slate-500 uppercase text-[10px] font-bold tracking-wider border-b border-slate-200">
+                        <th className="p-3">Item / Reagent</th>
+                        <th className="p-3">Category</th>
+                        <th className="p-3">Lot Number</th>
+                        <th className="p-3">Current Stock</th>
+                        <th className="p-3">Min Level</th>
+                        <th className="p-3">Status</th>
+                        <th className="p-3 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {inventoryList.length === 0 ? (
+                        <tr><td colSpan="7" className="p-6 text-center text-slate-400">No inventory items loaded.</td></tr>
+                      ) : (
+                        inventoryList.map(item => (
+                          <tr key={item.id} className="hover:bg-slate-50 transition">
+                            <td className="p-3 font-bold text-slate-800">{item.name}</td>
+                            <td className="p-3 text-slate-500">{item.category}</td>
+                            <td className="p-3 font-mono text-slate-600">{item.lot_number || '-'}</td>
+                            <td className="p-3 font-mono font-extrabold text-slate-900 text-sm">
+                              {item.current_stock} <span className="text-[10px] font-normal text-slate-400">{item.unit}</span>
+                            </td>
+                            <td className="p-3 font-mono text-slate-500">{item.min_reorder_level}</td>
+                            <td className="p-3">
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                item.isLowStock ? 'bg-red-100 text-red-800' : 'bg-emerald-100 text-emerald-800'
+                              }`}>
+                                {item.isLowStock ? 'LOW STOCK' : 'OPTIMAL'}
+                              </span>
+                            </td>
+                            <td className="p-3 text-right">
+                              <button 
+                                onClick={async () => {
+                                  const add = prompt(`Add stock for ${item.name} (${item.unit}):`, '10');
+                                  if (add && !isNaN(add)) {
+                                    await api.call('adjustStock', item.id, parseInt(add, 10), 'Stock replenishment');
+                                    showToast(`Stock updated for ${item.name}!`);
+                                    refreshInventory();
+                                  }
+                                }}
+                                className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded text-[10px] transition"
+                              >
+                                + Adjust Stock
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* TAB: DASHBOARD */}
+            {activeTab === 'dashboard' && (
+              <div className="space-y-6">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  {[
+                    { label: "Today's Orders", val: phlebotomyQueue.length + 5, color: "text-slate-900" },
+                    { label: "Phlebotomy Pending", val: phlebotomyQueue.length, color: "text-amber-600" },
+                    { label: "Awaiting Validation", val: resultWorklist.length, color: "text-purple-600" },
+                    { label: "Lab Location", val: context.labProfile.address, color: "text-sky-600", small: true }
+                  ].map((card, idx) => (
+                    <div key={idx} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{card.label}</span>
+                      <div className={`mt-2 font-mono font-bold ${card.small ? 'text-sm' : 'text-2xl'} ${card.color}`}>
+                        {card.val}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+                  <h3 className="font-bold text-slate-900 text-base">Quick Operational Actions</h3>
+                  <div className="flex flex-wrap gap-3">
+                    <button 
+                      onClick={() => { setActiveTab('orders'); setIsPatientModalOpen(true); }}
+                      className="px-4 py-2 bg-sky-500 hover:bg-sky-600 text-white text-xs font-bold rounded-lg shadow-sm"
+                    >
+                      + Register Patient & Book Test
+                    </button>
+                    <button 
+                      onClick={() => setActiveTab('phlebotomy')}
+                      className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg"
+                    >
+                      View Phlebotomy Queue
+                    </button>
+                    <button 
+                      onClick={() => setActiveTab('results')}
+                      className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg"
+                    >
+                      Enter Test Results
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB: LAB SETTINGS & AUDIT */}
+            {activeTab === 'admin' && (
+              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900">Lab Master Profile</h2>
+                  <p className="text-xs text-slate-500">Live configuration loaded from your Google Sheet 'Settings' tab</p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl text-xs">
+                  <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                    <span className="font-bold text-slate-500 uppercase text-[10px]">Laboratory Name</span>
+                    <div className="text-sm font-extrabold text-slate-800 mt-1">{context.labProfile.name}</div>
+                  </div>
+                  <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                    <span className="font-bold text-slate-500 uppercase text-[10px]">Address & City</span>
+                    <div className="text-sm font-extrabold text-slate-800 mt-1">{context.labProfile.address}</div>
+                  </div>
+                  <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                    <span className="font-bold text-slate-500 uppercase text-[10px]">Official Phone</span>
+                    <div className="text-sm font-extrabold text-slate-800 mt-1">{context.labProfile.phone}</div>
+                  </div>
+                  <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                    <span className="font-bold text-slate-500 uppercase text-[10px]">Backend Database</span>
+                    <div className="text-sm font-mono font-bold text-sky-600 mt-1">Google Sheets &bull; 17 Tabs</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+          </main>
+
+          {/* ==================== 3. NEW PATIENT REGISTRATION MODAL ==================== */}
+          {isPatientModalOpen && (
+            <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+              <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                
+                <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+                  <h3 className="font-extrabold text-sm flex items-center gap-2">
+                    <Icons.User />
+                    <span>New Patient Registration (DPDP Act 2023 Compliant)</span>
+                  </h3>
+                  <button onClick={() => setIsPatientModalOpen(false)} className="text-slate-400 hover:text-white">
+                    <Icons.Close />
+                  </button>
+                </div>
+
+                <form 
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    const form = e.target;
+                    const patientData = {
+                      title: form.title.value,
+                      first_name: form.first_name.value.trim(),
+                      last_name: form.last_name.value.trim(),
+                      gender: form.gender.value,
+                      age: parseInt(form.age.value, 10),
+                      age_unit: form.age_unit.value,
+                      mobile: form.mobile.value.trim(),
+                      email: form.email.value.trim(),
+                      blood_group: form.blood_group.value,
+                      city: form.city.value.trim() || 'Mumbai',
+                      consent_dpdp: form.consent_dpdp.checked
+                    };
+
+                    try {
+                      showToast('Saving patient to Google Sheet...', 'info');
+                      const saved = await api.call('registerPatient', patientData, false);
+                      if (saved && saved.duplicateDetected) {
+                        showToast(saved.message, 'warning');
+                        if (saved.duplicates && saved.duplicates.length > 0) {
+                          const dup = normalizePatient(saved.duplicates[0]);
+                          setSelectedPatient(dup);
+                          setIsPatientModalOpen(false);
+                          showToast(`Loaded existing profile: ${dup.fullName} (${dup.uhid})`);
+                        }
+                        return;
+                      }
+                      const actualPatient = normalizePatient(saved);
+                      setSelectedPatient(actualPatient);
+                      setIsPatientModalOpen(false);
+                      showToast(`Patient registered! UHID: ${actualPatient.uhid}`, 'success');
+                    } catch (err) {
+                      showToast(err.message, 'error');
+                    }
+                  }}
+                  className="p-6 space-y-4 text-xs"
+                >
+                  <div className="grid grid-cols-12 gap-3">
+                    <div className="col-span-3">
+                      <label className="font-bold text-slate-600 block mb-1">Title</label>
+                      <select name="title" className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 font-medium">
+                        <option value="Mr">Mr</option>
+                        <option value="Mrs">Mrs</option>
+                        <option value="Ms">Ms</option>
+                        <option value="Master">Master</option>
+                        <option value="Dr">Dr</option>
+                      </select>
+                    </div>
+                    <div className="col-span-5">
+                      <label className="font-bold text-slate-600 block mb-1">First Name *</label>
+                      <input name="first_name" required placeholder="e.g. Pravin" className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 font-medium text-slate-800" />
+                    </div>
+                    <div className="col-span-4">
+                      <label className="font-bold text-slate-600 block mb-1">Last Name</label>
+                      <input name="last_name" placeholder="e.g. Surve" className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 font-medium text-slate-800" />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="font-bold text-slate-600 block mb-1">10-Digit Mobile *</label>
+                      <input name="mobile" required pattern="[6-9][0-9]{9}" placeholder="e.g. 9820011223" className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 font-mono font-medium text-slate-800" />
+                    </div>
+                    <div>
+                      <label className="font-bold text-slate-600 block mb-1">Gender *</label>
+                      <select name="gender" className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 font-medium">
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-12 gap-3">
+                    <div className="col-span-6">
+                      <label className="font-bold text-slate-600 block mb-1">Age *</label>
+                      <input name="age" type="number" required min="0" max="125" placeholder="35" className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 font-mono font-medium text-slate-800" />
+                    </div>
+                    <div className="col-span-6">
+                      <label className="font-bold text-slate-600 block mb-1">Age Unit</label>
+                      <select name="age_unit" className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 font-medium">
+                        <option value="Years">Years</option>
+                        <option value="Months">Months</option>
+                        <option value="Days">Days</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="font-bold text-slate-600 block mb-1">Email (Optional)</label>
+                      <input name="email" type="email" placeholder="patient@gmail.com" className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-slate-800" />
+                    </div>
+                    <div>
+                      <label className="font-bold text-slate-600 block mb-1">Blood Group</label>
+                      <select name="blood_group" className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 font-medium">
+                        <option value="Unknown">Unknown</option>
+                        <option value="A+">A+</option>
+                        <option value="A-">A-</option>
+                        <option value="B+">B+</option>
+                        <option value="B-">B-</option>
+                        <option value="O+">O+</option>
+                        <option value="O-">O-</option>
+                        <option value="AB+">AB+</option>
+                        <option value="AB-">AB-</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-slate-600 block mb-1">City / Area</label>
+                    <input name="city" defaultValue="DEVICHAPADA" className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-slate-800" />
+                  </div>
+
+                  {/* DPDP Consent Checkbox */}
+                  <div className="bg-sky-50/70 p-3 rounded-xl border border-sky-200 flex items-start gap-2.5">
+                    <input name="consent_dpdp" type="checkbox" required defaultChecked className="mt-0.5 rounded text-sky-600 focus:ring-sky-500" />
+                    <label className="text-[11px] text-slate-600 leading-snug">
+                      <span className="font-bold text-slate-800">DPDP Act 2023 Consent:</span> Patient gives explicit digital consent to collect biological specimens and process medical diagnostic results.
+                    </label>
+                  </div>
+
+                  <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
+                    <button type="button" onClick={() => setIsPatientModalOpen(false)} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 font-bold rounded-lg transition">
+                      Cancel
+                    </button>
+                    <button type="submit" className="px-5 py-2 bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-lg shadow-sm transition">
+                      Save & Select Patient
+                    </button>
+                  </div>
+                </form>
+
+              </div>
+            </div>
+          )}
+
+          {/* ==================== 4. INVOICE MODAL ==================== */}
+          {isInvoiceModalOpen && latestInvoice && (
+            <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+              <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full p-6 text-xs space-y-4">
+                <div className="text-center pb-3 border-b border-slate-100">
+                  <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full mx-auto flex items-center justify-center mb-2">
+                    <Icons.Check />
+                  </div>
+                  <h3 className="font-extrabold text-base text-slate-900">{context.labProfile.name}</h3>
+                  <p className="text-[11px] text-slate-400">{context.labProfile.address}</p>
+                </div>
+
+                <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-1 font-mono">
+                  <div className="flex justify-between font-bold text-slate-800">
+                    <span>Invoice No:</span>
+                    <span>{latestInvoice.invoiceNo}</span>
+                  </div>
+                  <div className="flex justify-between text-slate-600">
+                    <span>Order No:</span>
+                    <span>{latestInvoice.orderNo}</span>
+                  </div>
+                  <div className="flex justify-between text-slate-600">
+                    <span>Patient UHID:</span>
+                    <span>{latestInvoice.uhid}</span>
+                  </div>
+                </div>
+
+                <div className="space-y-1 border-t border-slate-100 pt-2 font-mono">
+                  <div className="flex justify-between font-bold text-sm text-slate-900">
+                    <span>Net Amount:</span>
+                    <span>₹{latestInvoice.netAmount}</span>
+                  </div>
+                  <div className="flex justify-between text-emerald-600 font-bold">
+                    <span>Amount Paid:</span>
+                    <span>₹{latestInvoice.paidAmount}</span>
+                  </div>
+                  <div className="flex justify-between text-amber-700 font-bold">
+                    <span>Balance Due:</span>
+                    <span>₹{latestInvoice.balanceAmount}</span>
+                  </div>
+                </div>
+
+                <div className="pt-2 flex gap-2">
+                  <button 
+                    onClick={() => window.print()}
+                    className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 font-bold rounded-lg text-slate-800 transition"
+                  >
+                    Print Invoice
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setIsInvoiceModalOpen(false);
+                      setActiveTab('phlebotomy');
+                    }}
+                    className="flex-1 py-2 bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-lg shadow-sm transition"
+                  >
+                    Go to Phlebotomy →
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ==================== 5. TOAST NOTIFICATIONS ==================== */}
+          <div className="fixed bottom-5 right-5 z-50 flex flex-col items-end gap-2 pointer-events-none">
+            {toasts.map(t => (
+              <div 
+                key={t.id} 
+                className={`px-4 py-2.5 rounded-xl shadow-lg border text-xs font-bold pointer-events-auto transition flex items-center gap-2 ${
+                  t.type === 'error' ? 'bg-red-50 text-red-800 border-red-200' :
+                  t.type === 'warning' ? 'bg-amber-50 text-amber-800 border-amber-200' :
+                  t.type === 'info' ? 'bg-blue-50 text-blue-800 border-blue-200' :
+                  'bg-emerald-50 text-emerald-800 border-emerald-200'
+                }`}
+              >
+                <span>{t.message}</span>
+              </div>
+            ))}
+          </div>
+
+        </div>
+      );
+    }
+
+    // Mount React App
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
+

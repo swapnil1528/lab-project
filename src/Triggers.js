@@ -28,7 +28,19 @@ const Triggers = {
     }
 
     try {
-      const ss = Repository.getSpreadsheet() || SpreadsheetApp.getActiveSpreadsheet();
+      let ss = null;
+      try {
+        if (typeof Repository !== 'undefined' && Repository.getSpreadsheet) ss = Repository.getSpreadsheet();
+      } catch (e) {}
+      if (!ss) {
+        try { ss = SpreadsheetApp.getActiveSpreadsheet(); } catch (e) {}
+      }
+      if (!ss) {
+        try {
+          const propId = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
+          if (propId) ss = SpreadsheetApp.openById(propId);
+        } catch (e) {}
+      }
       if (!ss) throw new Error('Active database spreadsheet not found.');
 
       const ssFile = DriveApp.getFileById(ss.getId());
@@ -208,6 +220,25 @@ const Triggers = {
     };
   }
 };
+
+/**
+ * Top-level global functions recognized by Google Apps Script Run button and Triggers
+ */
+function installAllTriggers() {
+  return Triggers.installAllTriggers();
+}
+
+function dailyNightlyBackupJob() {
+  return Triggers.dailyNightlyBackupJob();
+}
+
+function monthlyArchivalJob() {
+  return Triggers.monthlyArchivalJob();
+}
+
+function dailyReagentAlertJob() {
+  return Triggers.dailyReagentAlertJob();
+}
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = Triggers;

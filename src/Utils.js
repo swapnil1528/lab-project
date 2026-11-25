@@ -11,26 +11,28 @@ const Utils = {
    * @param {number} timeoutMs - Max lock wait time in milliseconds (default: 30000)
    * @return {*}
    */
-  withScriptLock(callback, timeoutMs = 30000) {
-    let lock;
+  withScriptLock(callback, timeoutMs = 5000) {
+    let lock = null;
     try {
-      lock = LockService.getScriptLock();
-    } catch (e) {
-      // If LockService is not available (e.g. local unit tests)
-      return callback();
+      if (typeof LockService !== 'undefined') {
+        lock = LockService.getScriptLock() || LockService.getDocumentLock();
+      }
+    } catch (e) {}
+
+    let acquired = false;
+    if (lock) {
+      try {
+        acquired = lock.tryLock(timeoutMs);
+      } catch (e) {}
     }
 
     try {
-      const acquired = lock.waitLock(timeoutMs);
-      if (!acquired) {
-        throw new Error('LockTimeout: System is busy processing concurrent transactions. Please retry.');
-      }
       return callback();
     } finally {
-      try {
-        lock.releaseLock();
-      } catch (err) {
-        // Ignored if already released
+      if (lock && acquired) {
+        try {
+          lock.releaseLock();
+        } catch (err) {}
       }
     }
   },

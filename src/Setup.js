@@ -11,9 +11,53 @@ const Setup = {
    */
   setup() {
     console.log('--- Commencing LIS Database Setup ---');
-    const ss = Repository.getSpreadsheet() || SpreadsheetApp.getActiveSpreadsheet();
+    let ss = null;
+    try {
+      if (typeof Repository !== 'undefined' && Repository.getSpreadsheet) {
+        ss = Repository.getSpreadsheet();
+      }
+    } catch (e) {}
     if (!ss) {
-      throw new Error('No active spreadsheet found. Please bind this script to a Google Sheet or set SPREADSHEET_ID in Script Properties.');
+      try {
+        ss = SpreadsheetApp.getActiveSpreadsheet();
+      } catch (e) {}
+    }
+    if (!ss) {
+      try {
+        let propId = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
+        if (propId) {
+          if (propId.includes('/spreadsheets/d/')) {
+            const m = propId.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+            if (m) propId = m[1];
+          }
+          ss = SpreadsheetApp.openById(propId);
+        }
+      } catch (e) {}
+    }
+
+    // Check optional manual configuration variable
+    if (!ss && typeof SPREADSHEET_ID_OR_URL !== 'undefined' && SPREADSHEET_ID_OR_URL) {
+      try {
+        let sid = String(SPREADSHEET_ID_OR_URL).trim();
+        if (sid.includes('/spreadsheets/d/')) {
+          const m = sid.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+          if (m) sid = m[1];
+        }
+        ss = SpreadsheetApp.openById(sid);
+        PropertiesService.getScriptProperties().setProperty('SPREADSHEET_ID', sid);
+      } catch (e) {}
+    }
+
+    // If still null, automatically create the Google Sheet in Drive!
+    if (!ss) {
+      try {
+        console.log('No Google Sheet found. Automatically creating a brand new Google Sheet in your Google Drive...');
+        ss = SpreadsheetApp.create('Arogya LIS Pathology Database');
+        PropertiesService.getScriptProperties().setProperty('SPREADSHEET_ID', ss.getId());
+        console.log('✔ Successfully created and linked Google Sheet: ' + ss.getUrl());
+      } catch (err) {
+        throw new Error('Could not create or connect Google Sheet: ' + err.message);
+      }
     }
 
     const schemas = this.getSchemas();
@@ -61,8 +105,12 @@ const Setup = {
     this.seedCatalogAndRanges(ss);
     this.seedInventory(ss);
 
-    // Invalidate all caches
-    Repository.clearCache();
+    // Invalidate all caches if Repository is loaded
+    try {
+      if (typeof Repository !== 'undefined' && Repository.clearCache) {
+        Repository.clearCache();
+      }
+    } catch (e) {}
 
     console.log('--- LIS Database Setup Completed Successfully! Created tabs: ' + createdTabs.join(', ') + ' ---');
     return {
@@ -277,13 +325,27 @@ const Setup = {
     if (!sheet || sheet.getLastRow() > 1) return;
 
     const now = new Date().toISOString();
-    const demoUsers = [
+    const demoUsers = [];
+
+    // Automatically register current Google account as Admin
+    try {
+      let myEmail = '';
+      if (typeof Session !== 'undefined') {
+        myEmail = (Session.getActiveUser && Session.getActiveUser().getEmail()) ||
+                  (Session.getEffectiveUser && Session.getEffectiveUser().getEmail()) || '';
+      }
+      if (myEmail) {
+        demoUsers.push(['USR-OWNER', myEmail.toLowerCase().trim(), 'Lab Owner (Admin)', 'Admin', 'Management', 'MBBS, MD', '', 'Active', now, now, now, 'SYSTEM']);
+      }
+    } catch (e) {}
+
+    demoUsers.push(
       ['USR-ADMIN', 'admin@arogyalabs.in', 'Dr. Ramesh Kulkarni (Admin)', 'Admin', 'Management', 'MD (Pathology), DHA', '', 'Active', now, now, now, 'SYSTEM'],
       ['USR-PATH', 'pathologist@arogyalabs.in', 'Dr. Ananya Sen', 'Pathologist', 'Pathology', 'MD (Pathology), FICP', '', 'Active', now, now, now, 'SYSTEM'],
       ['USR-TECH', 'tech@arogyalabs.in', 'Vikram Shinde', 'LabTechnician', 'Biochemistry', 'B.Sc MLT', '', 'Active', now, now, now, 'SYSTEM'],
       ['USR-PHLEB', 'phleb@arogyalabs.in', 'Sunil Pawar', 'Phlebotomist', 'Phlebotomy', 'DMLT', '', 'Active', now, now, now, 'SYSTEM'],
       ['USR-FRONT', 'frontdesk@arogyalabs.in', 'Pooja Sharma', 'FrontDesk', 'Front Office', 'B.Com, PGDHM', '', 'Active', now, now, now, 'SYSTEM']
-    ];
+    );
 
     sheet.getRange(2, 1, demoUsers.length, demoUsers[0].length).setValues(demoUsers);
   },
@@ -532,6 +594,33 @@ const Setup = {
     sheet.getRange(2, 1, inventory.length, inventory[0].length).setValues(inventory);
   }
 };
+
+/**
+ * Top-level global functions recognized by Google Apps Script Run button
+ */
+function setup() {
+  return Setup.setup();
+}
+
+function runSetup() {
+  return Setup.setup();
+}
+
+/**
+ * Manually connect an existing Google Sheet by pasting its URL or ID
+ * @param {string} sheetUrlOrId 
+ */
+function connectExistingSheet(sheetUrlOrId) {
+  let id = String(sheetUrlOrId || '').trim();
+  if (id.includes('/spreadsheets/d/')) {
+    const m = id.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+    if (m) id = m[1];
+  }
+  const ss = SpreadsheetApp.openById(id);
+  PropertiesService.getScriptProperties().setProperty('SPREADSHEET_ID', id);
+  console.log('✔ Successfully connected to Google Sheet: ' + ss.getName() + ' (' + ss.getUrl() + ')');
+  return ss.getUrl();
+}
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = Setup;

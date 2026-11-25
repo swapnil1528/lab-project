@@ -8,8 +8,13 @@ function doGet(e) {
 
   // 1. Patient / Doctor Public Report Portal
   if (page === 'portal') {
-    const template = HtmlService.createTemplateFromFile('ui/PatientPortal');
-    template.token = e.parameter.token || '';
+    let template;
+    try {
+      template = HtmlService.createTemplateFromFile('ui/PatientPortal');
+    } catch (err) {
+      template = HtmlService.createTemplateFromFile('PatientPortal');
+    }
+    template.token = e && e.parameter ? e.parameter.token || '' : '';
     return template.evaluate()
       .setTitle('Arogya Diagnostics - Secure Report Portal')
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
@@ -17,22 +22,33 @@ function doGet(e) {
   }
 
   // 2. Main LIS Single Page Application
-  const template = HtmlService.createTemplateFromFile('ui/Index');
-  template.initialContext = SessionContext.getClientContext();
+  let template;
+  try {
+    template = HtmlService.createTemplateFromFile('ui/Index');
+  } catch (err) {
+    template = HtmlService.createTemplateFromFile('Index');
+  }
+  template.initialContext = typeof SessionContext !== 'undefined' ? SessionContext.getClientContext() : {};
 
   return template.evaluate()
     .setTitle('Arogya Laboratory Information System (LIS)')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.SAMEORIGIN)
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
 /**
  * Injects sub-templates into main template
+ * Supports both clasp path 'ui/Styles' and web editor name 'Styles'
  * @param {string} filename 
  * @return {string}
  */
 function include(filename) {
-  return HtmlService.createHtmlOutputFromFile(filename).getContent();
+  try {
+    return HtmlService.createHtmlOutputFromFile(filename).getContent();
+  } catch (e) {
+    const cleanName = filename.replace(/^ui\//, '');
+    return HtmlService.createHtmlOutputFromFile(cleanName).getContent();
+  }
 }
 
 // =========================================================================

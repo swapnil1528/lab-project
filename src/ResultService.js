@@ -44,9 +44,9 @@ const ResultService = {
   getDepartmentWorklist(department) {
     SessionContext.requirePermission(PERMISSIONS.RESULT_ENTER, 'View Department Worklist');
 
-    // Fetch samples received in lab
+    // Fetch samples received in lab (or collected)
     const samples = Repository.getTable('Samples', false)
-      .filter(s => s.status === 'Active' && (s.collection_status === 'Received' || s.collection_status === 'In Process'));
+      .filter(s => s.status === 'Active' && (s.collection_status === 'Collected' || s.collection_status === 'Received' || s.collection_status === 'In Process'));
 
     const filteredSamples = department ? samples.filter(s => s.department === department) : samples;
     const worklist = [];
@@ -106,8 +106,13 @@ const ResultService = {
     const order = Repository.findById('Orders', orderId);
     if (!order) throw new Error('Order not found');
     const patient = Repository.findOneByField('Patients', 'uhid', order.uhid);
-    const orderItems = Repository.findByField('OrderItems', 'order_id', orderId)
+    let orderItems = Repository.findByField('OrderItems', 'order_id', orderId)
       .filter(i => (!sampleId || i.sample_id === sampleId) && i.status === 'Active');
+    if (sampleId && orderItems.length === 0) {
+      // Fallback: if items weren't linked to sample_id yet, return active items for this order
+      orderItems = Repository.findByField('OrderItems', 'order_id', orderId)
+        .filter(i => i.status === 'Active');
+    }
 
     const catalogTests = Repository.getTable('Tests', true);
     const ageDays = patient ? (patient.age ? patient.age * 365 : 9125) : 9125;
@@ -258,10 +263,31 @@ const ResultService = {
     const ageDays = patient ? (patient.age ? patient.age * 365 : 9125) : 9125;
     const gender = patient ? patient.gender : 'All';
 
+    // Normalize paramValues to standardized array of { testId, code, value, textValue }
+    let paramList = [];
+    if (Array.isArray(paramValues)) {
+      paramList = paramValues.map(p => ({
+        testId: p.testId || p.id,
+        code: p.code || p.testCode,
+        value: p.value !== undefined ? p.value : p.val,
+        textValue: p.textValue
+      }));
+    } else if (paramValues && typeof paramValues === 'object') {
+      paramList = Object.entries(paramValues).map(([key, val]) => {
+        const test = catalogTests.find(t => t.id === key || t.code === key);
+        return {
+          testId: test ? test.id : key,
+          code: test ? test.code : key,
+          value: typeof val === 'object' && val !== null ? val.value : val,
+          textValue: typeof val === 'object' && val !== null ? val.textValue : undefined
+        };
+      });
+    }
+
     // 1. Build Key-Value map of numeric entries for calculated formulas
     const valueMap = {};
-    for (const p of paramValues) {
-      const test = catalogTests.find(t => t.id === p.testId);
+    for (const p of paramList) {
+      const test = catalogTests.find(t => t.id === p.testId || t.code === p.code || t.code === p.testId);
       if (test && p.value !== '' && p.value !== null && !isNaN(p.value)) {
         valueMap[test.code] = parseFloat(p.value);
       }
@@ -303,8 +329,8 @@ const ResultService = {
     const nextStatus = submitForValidation ? this.RESULT_STATUS.ENTERED : this.RESULT_STATUS.DRAFT;
 
     Utils.withScriptLock(() => {
-      for (const p of paramValues) {
-        const test = catalogTests.find(t => t.id === p.testId);
+      for (const p of paramList) {
+        const test = catalogTests.find(t => t.id === p.testId || t.code === p.code || t.code === p.testId);
         if (!test) continue;
 
         // Use calculated value if parameter is calculated

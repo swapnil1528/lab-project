@@ -123,7 +123,12 @@ const PatientService = {
     SessionContext.requirePermission(PERMISSIONS.PATIENT_REGISTER, 'Register Patient');
 
     // 1. Mandatory Validations
-    if (!data.first_name || String(data.first_name).trim().length === 0) {
+    const firstName = data.first_name || data.firstName;
+    const lastName = data.last_name || data.lastName;
+    data.first_name = firstName;
+    data.last_name = lastName;
+
+    if (!firstName || String(firstName).trim().length === 0) {
       throw new Error('Validation Failed: First name is mandatory.');
     }
 
@@ -137,7 +142,8 @@ const PatientService = {
     }
 
     // DPDP Act 2023 Explicit Consent Verification
-    const hasConsent = data.consent_dpdp === true || data.consent_dpdp === 'TRUE' || data.consent_dpdp === 'true';
+    const hasConsent = data.consent_dpdp === true || data.consent_dpdp === 'TRUE' || data.consent_dpdp === 'true' ||
+                       data.consentDpdp === true || data.consentDpdp === 'TRUE' || data.consentDpdp === 'true';
     if (!hasConsent) {
       throw new Error('Compliance Gate: Patient explicit consent under DPDP Act 2023 is mandatory before registration.');
     }

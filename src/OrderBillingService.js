@@ -51,9 +51,12 @@ const OrderBillingService = {
     const expandedTestsForOrder = [];
 
     for (const item of orderData.items) {
-      if (item.type === 'Panel') {
-        const panel = catalog.panels.find(p => p.id === item.id || p.code === item.code);
-        if (!panel) throw new Error(`Invalid panel: ${item.code || item.id}`);
+      const targetId = item.id || item.testId || item.code;
+      const isPanel = item.type === 'Panel' || item.isPanel === true || (String(targetId).startsWith('PANEL'));
+
+      if (isPanel) {
+        const panel = catalog.panels.find(p => p.id === targetId || p.code === targetId || p.id === item.id || p.code === item.code);
+        if (!panel) throw new Error(`Invalid panel: ${targetId}`);
 
         const unitPrice = isB2B ? (panel.b2b_price || panel.price) : panel.price;
         grossTotal += unitPrice;
@@ -69,7 +72,7 @@ const OrderBillingService = {
         });
 
         // Expand panel tests for phlebotomy and technician worklists
-        for (const t of panel.tests) {
+        for (const t of (panel.tests || [])) {
           expandedTestsForOrder.push({
             testId: t.id,
             code: t.code,
@@ -84,8 +87,8 @@ const OrderBillingService = {
         }
       } else {
         // Individual Test
-        const test = catalog.tests.find(t => t.id === item.id || t.code === item.code);
-        if (!test) throw new Error(`Invalid test: ${item.code || item.id}`);
+        const test = catalog.tests.find(t => t.id === targetId || t.code === targetId || t.id === item.id || t.code === item.code);
+        if (!test) throw new Error(`Invalid test: ${targetId}`);
 
         const unitPrice = isB2B ? (test.b2b_price || test.price) : test.price;
         grossTotal += unitPrice;
@@ -133,7 +136,7 @@ const OrderBillingService = {
     const netAmount = Utils.round(grossTotal - discountAmount + taxAmount, 2);
 
     // Initial Payment
-    const initialPayment = orderData.initial_payment || {};
+    const initialPayment = orderData.initial_payment || orderData.payment || {};
     const paidAmount = Utils.round(parseFloat(initialPayment.amount) || 0, 2);
     const balanceAmount = Utils.round(Math.max(0, netAmount - paidAmount), 2);
 
@@ -241,7 +244,7 @@ const OrderBillingService = {
           order_id: orderId,
           uhid: orderData.uhid,
           amount: paidAmount,
-          payment_method: initialPayment.payment_method || 'Cash',
+          payment_method: initialPayment.payment_method || initialPayment.mode || 'Cash',
           transaction_ref: initialPayment.transaction_ref || '',
           payment_date: now.substring(0, 10),
           received_by: userEmail,
@@ -258,6 +261,15 @@ const OrderBillingService = {
       Repository.saveRow('Invoices', invoiceRecord);
       if (paymentRecords.length > 0) {
         Repository.batchInsert('Payments', paymentRecords);
+      }
+
+      // 5b. Automatically generate specimen sample tubes & barcodes for phlebotomy
+      if (typeof SampleService !== 'undefined' && typeof SampleService.generateSamplesForOrder === 'function') {
+        try {
+          SampleService.generateSamplesForOrder(orderId);
+        } catch (sampErr) {
+          if (typeof Logger !== 'undefined') Logger.log('Sample generation note: ' + sampErr.message);
+        }
       }
 
       // 6. Audit Logging
@@ -478,6 +490,19 @@ const OrderBillingService = {
       items: items.map(i => ({ name: i.item_name, price: i.final_price, dept: i.department })),
       payments: payments.map(p => ({ receiptNo: p.receipt_no, amount: p.amount, method: p.payment_method }))
     };
+  },
+
+  /**
+   * Retrieves active orders list for reports and operational tracking
+   * @param {string} filter
+   * @return {Array<Object>}
+   */
+  getOrdersList(filter = '') {
+    const orders = Repository.getTable('Orders', false).filter(o => o.status !== 'Cancelled');
+    if (!filter || filter === 'All') {
+      return orders.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+    }
+    return orders.filter(o => o.order_status === filter).sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
   }
 };
 

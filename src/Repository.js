@@ -18,17 +18,47 @@ const Repository = {
    */
   getSpreadsheet() {
     if (this._spreadsheet) return this._spreadsheet;
+
+    // 1. Check bound active spreadsheet (if opened via Extensions > Apps Script)
     try {
       this._spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
       if (this._spreadsheet) return this._spreadsheet;
-    } catch (e) {
-      // Running standalone or via webapp without container bound
+    } catch (e) {}
+
+    // 2. Check SPREADSHEET_ID in Script Properties
+    try {
+      let propId = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
+      if (propId) {
+        if (propId.includes('/spreadsheets/d/')) {
+          const m = propId.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+          if (m) propId = m[1];
+        }
+        this._spreadsheet = SpreadsheetApp.openById(propId);
+        if (this._spreadsheet) return this._spreadsheet;
+      }
+    } catch (e) {}
+
+    // 3. Check optional hardcoded config if defined
+    if (typeof SPREADSHEET_ID_OR_URL !== 'undefined' && SPREADSHEET_ID_OR_URL) {
+      try {
+        let sid = String(SPREADSHEET_ID_OR_URL).trim();
+        if (sid.includes('/spreadsheets/d/')) {
+          const m = sid.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+          if (m) sid = m[1];
+        }
+        this._spreadsheet = SpreadsheetApp.openById(sid);
+        PropertiesService.getScriptProperties().setProperty('SPREADSHEET_ID', sid);
+        return this._spreadsheet;
+      } catch (e) {}
     }
 
+    // 4. Auto-create new Google Sheet in Google Drive if in Apps Script environment
     try {
-      const propId = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
-      if (propId) {
-        this._spreadsheet = SpreadsheetApp.openById(propId);
+      if (typeof SpreadsheetApp !== 'undefined' && SpreadsheetApp.create) {
+        console.log('No Google Sheet linked. Automatically creating new "Arogya LIS Pathology Database" in Google Drive...');
+        this._spreadsheet = SpreadsheetApp.create('Arogya LIS Pathology Database');
+        PropertiesService.getScriptProperties().setProperty('SPREADSHEET_ID', this._spreadsheet.getId());
+        console.log('✔ Automatically created and linked Google Sheet: ' + this._spreadsheet.getUrl());
         return this._spreadsheet;
       }
     } catch (e) {}
