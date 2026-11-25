@@ -11,6 +11,7 @@ const path = require('path');
 const PORT = process.env.PORT || 3000;
 const SRC_DIR = path.join(__dirname, 'src');
 const APPS_SCRIPT_WEBAPP_URL = process.env.APPS_SCRIPT_URL || 'https://script.google.com/macros/s/AKfycbzP6tlEBmrZQRw4GnqEl8iGSSNByteMTdJtvvGpE9Aa5t4nDPO5_qziwr3h5WsVeTg/exec';
+const localPriceOverrides = {};
 
 // -------------------------------------------------------------
 // 1. Google Workspace In-Memory Mocks
@@ -398,6 +399,16 @@ const server = http.createServer((req, res) => {
                     }
                   }
 
+                  // Overlay local price overrides if apiUpdateCatalogPrice hasn't been deployed to Apps Script yet
+                  if (methodName === 'apiGetCatalog' && gasData.result && Object.keys(localPriceOverrides).length > 0) {
+                    const applyOverride = (item) => {
+                      const ov = localPriceOverrides[item.id];
+                      return ov ? { ...item, price: ov.price, b2b_price: ov.b2b_price !== undefined ? ov.b2b_price : item.b2b_price } : item;
+                    };
+                    if (Array.isArray(gasData.result.panels)) gasData.result.panels = gasData.result.panels.map(applyOverride);
+                    if (Array.isArray(gasData.result.tests)) gasData.result.tests = gasData.result.tests.map(applyOverride);
+                  }
+
                   res.writeHead(200, { 'Content-Type': 'application/json' });
                   res.end(JSON.stringify({ result: gasData.result }));
                   return;
@@ -434,6 +445,13 @@ const server = http.createServer((req, res) => {
             apiGetPatientProfile: (u) => PatientService.getPatientProfile(u),
             apiGetCatalog: () => CatalogService.getFullCatalog(),
             apiSearchCatalog: (q) => CatalogService.searchCatalog(q),
+            apiUpdateCatalogPrice: (d) => {
+              const res = CatalogService.updateCatalogPrice(d);
+              if (res && res.item) {
+                localPriceOverrides[res.item.id] = { price: res.item.price, b2b_price: res.item.b2b_price };
+              }
+              return res;
+            },
             apiCreateOrder: (o) => OrderBillingService.createOrder(o),
             apiGetOrdersList: (f) => OrderBillingService.getOrdersList(f),
             apiAddPayment: (id, p) => OrderBillingService.addPayment(id, p),

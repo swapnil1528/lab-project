@@ -2121,6 +2121,61 @@ var CatalogService = {
       importedRangeCount: newRanges.length,
       message: `Successfully imported ${newTests.length} tests and ${newRanges.length} reference ranges.`
     };
+  },
+
+  /**
+   * Updates retail and B2B price of a test or panel
+   * @param {Object} itemData - { id, isPanel, type, price, b2b_price }
+   * @return {Object}
+   */
+  updateCatalogPrice(itemData) {
+    SessionContext.requirePermission(PERMISSIONS.CATALOG_EDIT, 'Update Catalog Price');
+
+    if (!itemData || !itemData.id) {
+      throw new Error('Test or Panel ID is required.');
+    }
+
+    const newPrice = parseFloat(itemData.price);
+    if (isNaN(newPrice) || newPrice < 0) {
+      throw new Error('Valid non-negative retail price is required.');
+    }
+
+    const isPanel = itemData.isPanel === true || itemData.type === 'Panel' || String(itemData.id).startsWith('PNL-');
+    const sheetName = isPanel ? 'Panels' : 'Tests';
+    const record = Repository.findById(sheetName, itemData.id);
+    if (!record) {
+      throw new Error(`${isPanel ? 'Panel' : 'Test'} not found: ${itemData.id}`);
+    }
+
+    const oldPrice = record.price;
+    record.price = Utils.round(newPrice, 2);
+
+    if (itemData.b2b_price !== undefined && itemData.b2b_price !== '' && itemData.b2b_price !== null) {
+      const newB2b = parseFloat(itemData.b2b_price);
+      if (isNaN(newB2b) || newB2b < 0) {
+        throw new Error('Valid non-negative B2B price is required.');
+      }
+      record.b2b_price = Utils.round(newB2b, 2);
+    }
+
+    record.updated_at = Utils.getTimestamp();
+    record.updated_by = SessionContext.getCurrentEmail();
+
+    Repository.saveRow(sheetName, record);
+    Repository.clearCache(sheetName);
+    Repository.logAudit('UPDATE', isPanel ? 'PanelPrice' : 'TestPrice', record.id, {
+      name: record.name,
+      oldPrice: oldPrice,
+      newPrice: record.price,
+      b2bPrice: record.b2b_price
+    });
+
+    return {
+      status: 'SUCCESS',
+      isPanel: isPanel,
+      item: record,
+      message: `Updated price of [${record.name}] to ₹${record.price}.`
+    };
   }
 };
 
@@ -4927,6 +4982,7 @@ function doPost(e) {
     else if (action === 'getCatalog' || action === 'apiGetCatalog') result = CatalogService.getFullCatalog();
     else if (action === 'searchCatalog' || action === 'apiSearchCatalog') result = CatalogService.searchCatalog(args[0]);
     else if (action === 'bulkImportCatalog' || action === 'apiBulkImportCatalog') result = CatalogService.bulkImportCsv(args[0]);
+    else if (action === 'updateCatalogPrice' || action === 'apiUpdateCatalogPrice') result = CatalogService.updateCatalogPrice(args[0]);
     else if (action === 'createOrder' || action === 'apiCreateOrder') result = OrderBillingService.createOrder(args[0]);
     else if (action === 'getOrdersList' || action === 'apiGetOrdersList') result = OrderBillingService.getOrdersList(args[0]);
     else if (action === 'addPayment' || action === 'apiAddPayment') result = OrderBillingService.addPayment(args[0], args[1]);
@@ -4981,6 +5037,7 @@ function apiUpdatePatient(u, d) { return PatientService.updatePatient(u, d); }
 function apiGetCatalog() { return CatalogService.getFullCatalog(); }
 function apiSearchCatalog(q) { return CatalogService.searchCatalog(q); }
 function apiBulkImportCatalog(csv) { return CatalogService.bulkImportCsv(csv); }
+function apiUpdateCatalogPrice(d) { return CatalogService.updateCatalogPrice(d); }
 function apiCreateOrder(o) { return OrderBillingService.createOrder(o); }
 function apiGetOrdersList(f) { return OrderBillingService.getOrdersList(f); }
 function apiAddPayment(id, p) { return OrderBillingService.addPayment(id, p); }

@@ -89,6 +89,10 @@ function apiBulkImportCatalog(csvString) {
   return CatalogService.bulkImportCsv(csvString);
 }
 
+function apiUpdateCatalogPrice(itemData) {
+  return CatalogService.updateCatalogPrice(itemData);
+}
+
 // --- Order & Billing APIs ---
 function apiCreateOrder(orderData) {
   return OrderBillingService.createOrder(orderData);
