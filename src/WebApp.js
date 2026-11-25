@@ -206,6 +206,18 @@ function apiGetAuditLogs(limit, offset) {
   return AdminService.getAuditLogs(limit, offset);
 }
 
+function apiGetDoctorsList(includeInactive) {
+  return AdminService.getDoctorsList(includeInactive);
+}
+
+function apiSaveDoctor(docData) {
+  return AdminService.saveDoctor(docData);
+}
+
+function apiDeleteDoctor(doctorId) {
+  return AdminService.deleteDoctor(doctorId);
+}
+
 // --- Patient Portal APIs (Public Token + OTP) ---
 function apiRequestPortalOtp(token, mobileNumber) {
   return ReportService.requestPortalOtp(token, mobileNumber);

@@ -2158,7 +2158,13 @@ var OrderBillingService = {
 
     const patientName = `${patient.title ? patient.title + ' ' : ''}${patient.first_name} ${patient.last_name || ''}`.trim();
     const centreId = orderData.collection_centre_id || 'CTR-MAIN';
-    const doctorId = orderData.referring_doctor_id || 'DOC-SELF';
+    let doctorId = orderData.referring_doctor_id || orderData.referringDoctorId || '';
+    if (!doctorId && orderData.referringDoctor) {
+      const doctors = Repository.getTable('Doctors', true);
+      const matchedDoc = doctors.find(d => d.id === orderData.referringDoctor || d.name === orderData.referringDoctor);
+      doctorId = matchedDoc ? matchedDoc.id : 'DOC-SELF';
+    }
+    if (!doctorId) doctorId = 'DOC-SELF';
 
     // Check Centre Price Tier
     const centre = Repository.findById('Centres', centreId, true);
@@ -4529,6 +4535,109 @@ var AdminService = {
       offset: offset,
       logs: paged
     };
+  },
+
+  /**
+   * Returns list of referring doctors from the Doctors sheet
+   * @param {boolean} includeInactive
+   * @return {Array<Object>}
+   */
+  getDoctorsList(includeInactive = false) {
+    SessionContext.requirePermission(PERMISSIONS.ORDER_VIEW, 'View Referring Doctors');
+    const docs = Repository.getTable('Doctors', false);
+    if (includeInactive) return docs;
+    return docs.filter(d => d.status !== 'Inactive' && d.status !== 'Deleted');
+  },
+
+  /**
+   * Creates or updates a referring doctor in the Doctors sheet
+   * @param {Object} docData
+   * @return {Object}
+   */
+  saveDoctor(docData) {
+    SessionContext.requirePermission(PERMISSIONS.SETTINGS_MANAGE, 'Manage Referring Doctors');
+
+    if (!docData || !docData.name || !String(docData.name).trim()) {
+      throw new Error('Doctor name is required.');
+    }
+
+    const now = Utils.getTimestamp();
+    const adminEmail = SessionContext.getCurrentEmail();
+    const cleanName = String(docData.name).trim();
+    const commission = docData.commission_rate !== undefined && docData.commission_rate !== ''
+      ? parseFloat(docData.commission_rate) || 0
+      : 0;
+
+    if (docData.id) {
+      const existing = Repository.findById('Doctors', docData.id);
+      if (!existing) throw new Error(`Doctor not found: ${docData.id}`);
+
+      existing.code = docData.code !== undefined && String(docData.code).trim() !== '' ? String(docData.code).trim() : existing.code;
+      existing.name = cleanName;
+      existing.degree = docData.degree !== undefined ? String(docData.degree).trim() : (existing.degree || '');
+      existing.specialization = docData.specialization !== undefined ? String(docData.specialization).trim() : (existing.specialization || '');
+      existing.clinic_hospital = docData.clinic_hospital !== undefined ? String(docData.clinic_hospital).trim() : (existing.clinic_hospital || '');
+      existing.mobile = docData.mobile !== undefined ? String(docData.mobile).trim() : (existing.mobile || '');
+      existing.email = docData.email !== undefined ? String(docData.email).trim() : (existing.email || '');
+      existing.commission_rate = docData.commission_rate !== undefined ? commission : (existing.commission_rate || 0);
+      existing.portal_access_enabled = docData.portal_access_enabled !== undefined ? !!docData.portal_access_enabled : (existing.portal_access_enabled !== false);
+      existing.status = docData.status || existing.status || 'Active';
+      existing.updated_at = now;
+      existing.updated_by = adminEmail;
+
+      Repository.saveRow('Doctors', existing);
+      Repository.clearCache('Doctors');
+      Repository.logAudit('UPDATE', 'Doctor', existing.id, { name: existing.name });
+
+      return { status: 'SUCCESS', doctor: existing, message: `Doctor [${existing.name}] updated successfully.` };
+    } else {
+      const newId = Utils.generateId('DOC');
+      const newDoctor = {
+        id: newId,
+        code: (docData.code && String(docData.code).trim()) || newId,
+        name: cleanName,
+        degree: String(docData.degree || '').trim(),
+        specialization: String(docData.specialization || '').trim(),
+        clinic_hospital: String(docData.clinic_hospital || '').trim(),
+        mobile: String(docData.mobile || '').trim(),
+        email: String(docData.email || '').trim(),
+        commission_rate: commission,
+        portal_access_enabled: docData.portal_access_enabled !== undefined ? !!docData.portal_access_enabled : true,
+        status: 'Active',
+        created_at: now,
+        updated_at: now,
+        updated_by: adminEmail
+      };
+
+      Repository.saveRow('Doctors', newDoctor);
+      Repository.clearCache('Doctors');
+      Repository.logAudit('CREATE', 'Doctor', newDoctor.id, { name: newDoctor.name });
+
+      return { status: 'SUCCESS', doctor: newDoctor, message: `Doctor [${newDoctor.name}] added successfully.` };
+    }
+  },
+
+  /**
+   * Soft-deletes a referring doctor (marks status as Inactive)
+   * @param {string} doctorId
+   * @return {Object}
+   */
+  deleteDoctor(doctorId) {
+    SessionContext.requirePermission(PERMISSIONS.SETTINGS_MANAGE, 'Delete Referring Doctor');
+
+    if (!doctorId) throw new Error('Doctor ID is required.');
+    if (doctorId === 'DOC-SELF') {
+      throw new Error('Default Self / Direct Walk-in entry cannot be deleted.');
+    }
+
+    const existing = Repository.findById('Doctors', doctorId);
+    if (!existing) throw new Error(`Doctor not found: ${doctorId}`);
+
+    Repository.softDelete('Doctors', doctorId, 'Inactive');
+    Repository.clearCache('Doctors');
+    Repository.logAudit('DELETE', 'Doctor', doctorId, { name: existing.name });
+
+    return { status: 'SUCCESS', doctorId: doctorId, message: `Doctor [${existing.name}] deleted successfully.` };
   }
 };
 
@@ -4846,6 +4955,9 @@ function doPost(e) {
     else if (action === 'getUsersList' || action === 'apiGetUsersList') result = AdminService.getUsersList();
     else if (action === 'saveUser' || action === 'apiSaveUser') result = AdminService.saveUser(args[0]);
     else if (action === 'getAuditLogs' || action === 'apiGetAuditLogs') result = AdminService.getAuditLogs(args[0], args[1]);
+    else if (action === 'getDoctorsList' || action === 'apiGetDoctorsList') result = AdminService.getDoctorsList(args[0]);
+    else if (action === 'saveDoctor' || action === 'apiSaveDoctor') result = AdminService.saveDoctor(args[0]);
+    else if (action === 'deleteDoctor' || action === 'apiDeleteDoctor') result = AdminService.deleteDoctor(args[0]);
     else if (action === 'portalRequestOtp' || action === 'apiPortalRequestOtp') result = ReportService.requestPortalOtp(args[0], args[1]);
     else if (action === 'portalVerifyOtp' || action === 'apiPortalVerifyOtp') result = ReportService.verifyPortalOtp(args[0], args[1], args[2]);
     else if (action === 'setup' || action === 'runSetup') result = Setup.setup();
@@ -4897,6 +5009,9 @@ function apiUpdateSettings(m) { return AdminService.updateSettings(m); }
 function apiGetUsersList() { return AdminService.getUsersList(); }
 function apiSaveUser(u) { return AdminService.saveUser(u); }
 function apiGetAuditLogs(l, o) { return AdminService.getAuditLogs(l, o); }
+function apiGetDoctorsList(inc) { return AdminService.getDoctorsList(inc); }
+function apiSaveDoctor(d) { return AdminService.saveDoctor(d); }
+function apiDeleteDoctor(id) { return AdminService.deleteDoctor(id); }
 function apiPortalRequestOtp(t, m) { return ReportService.requestPortalOtp(t, m); }
 function apiPortalVerifyOtp(t, m, o) { return ReportService.verifyPortalOtp(t, m, o); }
 function apiRunDatabaseSetup() { return Setup.setup(); }

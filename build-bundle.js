@@ -160,6 +160,9 @@ function doPost(e) {
     else if (action === 'getUsersList' || action === 'apiGetUsersList') result = AdminService.getUsersList();
     else if (action === 'saveUser' || action === 'apiSaveUser') result = AdminService.saveUser(args[0]);
     else if (action === 'getAuditLogs' || action === 'apiGetAuditLogs') result = AdminService.getAuditLogs(args[0], args[1]);
+    else if (action === 'getDoctorsList' || action === 'apiGetDoctorsList') result = AdminService.getDoctorsList(args[0]);
+    else if (action === 'saveDoctor' || action === 'apiSaveDoctor') result = AdminService.saveDoctor(args[0]);
+    else if (action === 'deleteDoctor' || action === 'apiDeleteDoctor') result = AdminService.deleteDoctor(args[0]);
     else if (action === 'portalRequestOtp' || action === 'apiPortalRequestOtp') result = ReportService.requestPortalOtp(args[0], args[1]);
     else if (action === 'portalVerifyOtp' || action === 'apiPortalVerifyOtp') result = ReportService.verifyPortalOtp(args[0], args[1], args[2]);
     else if (action === 'setup' || action === 'runSetup') result = Setup.setup();
@@ -214,6 +217,9 @@ function apiUpdateSettings(m) { return AdminService.updateSettings(m); }
 function apiGetUsersList() { return AdminService.getUsersList(); }
 function apiSaveUser(u) { return AdminService.saveUser(u); }
 function apiGetAuditLogs(l, o) { return AdminService.getAuditLogs(l, o); }
+function apiGetDoctorsList(inc) { return AdminService.getDoctorsList(inc); }
+function apiSaveDoctor(d) { return AdminService.saveDoctor(d); }
+function apiDeleteDoctor(id) { return AdminService.deleteDoctor(id); }
 function apiPortalRequestOtp(t, m) { return ReportService.requestPortalOtp(t, m); }
 function apiPortalVerifyOtp(t, m, o) { return ReportService.verifyPortalOtp(t, m, o); }
 function apiRunDatabaseSetup() { return Setup.setup(); }

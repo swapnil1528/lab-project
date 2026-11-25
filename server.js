@@ -403,9 +403,12 @@ const server = http.createServer((req, res) => {
                   return;
                 } else {
                   console.warn(`[Google Sheets Remote Sync] Remote execution returned error:`, gasData.error);
-                  res.writeHead(400, { 'Content-Type': 'application/json' });
-                  res.end(JSON.stringify({ error: gasData.error }));
-                  return;
+                  if (!String(gasData.error || '').includes('Unknown API action')) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: gasData.error }));
+                    return;
+                  }
+                  console.log(`[Fallback] Method ${methodName} not yet in deployed Apps Script; handling locally.`);
                 }
               }
             } catch (jsonErr) {
@@ -452,6 +455,9 @@ const server = http.createServer((req, res) => {
             apiGetInventoryList: () => InventoryService.getInventoryList(),
             apiAdjustStock: (id, d, r) => InventoryService.adjustStock(id, d, r),
             apiGetAuditLogs: (l, o) => AdminService.getAuditLogs(l, o),
+            apiGetDoctorsList: (inc) => AdminService.getDoctorsList(inc),
+            apiSaveDoctor: (d) => AdminService.saveDoctor(d),
+            apiDeleteDoctor: (id) => AdminService.deleteDoctor(id),
             apiPortalRequestOtp: (t, m) => ReportService.requestPortalOtp(t, m),
             apiPortalVerifyOtp: (t, m, o) => ReportService.verifyPortalOtp(t, m, o)
           };

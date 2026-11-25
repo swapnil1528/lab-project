@@ -38,7 +38,13 @@ const OrderBillingService = {
 
     const patientName = `${patient.title ? patient.title + ' ' : ''}${patient.first_name} ${patient.last_name || ''}`.trim();
     const centreId = orderData.collection_centre_id || 'CTR-MAIN';
-    const doctorId = orderData.referring_doctor_id || 'DOC-SELF';
+    let doctorId = orderData.referring_doctor_id || orderData.referringDoctorId || '';
+    if (!doctorId && orderData.referringDoctor) {
+      const doctors = Repository.getTable('Doctors', true);
+      const matchedDoc = doctors.find(d => d.id === orderData.referringDoctor || d.name === orderData.referringDoctor);
+      doctorId = matchedDoc ? matchedDoc.id : 'DOC-SELF';
+    }
+    if (!doctorId) doctorId = 'DOC-SELF';
 
     // Check Centre Price Tier
     const centre = Repository.findById('Centres', centreId, true);
